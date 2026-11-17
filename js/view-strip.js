@@ -26,7 +26,7 @@ export function initProjectionPicker(onChange) {
     for (const p of PROJECTIONS) { const o = document.createElement('option'); o.value = p.id; o.textContent = p.label; sel.appendChild(o); }
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(PROJECTION_KEY) || localStorage.getItem(OLD_PROJECTION_KEY) || 'null'); } catch { stored = null; }
-    let id = stored?.id && PROJECTIONS.some(p => p.id === stored.id) ? stored.id : 'equirect', getOpts = () => ({});
+    let id = stored?.id && PROJECTIONS.some(p => p.id === stored.id) ? stored.id : 'vdg', getOpts = () => ({});
     const apply = () => {
         const opts = getOpts();
         onChange(id, opts);

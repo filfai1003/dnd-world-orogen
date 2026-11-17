@@ -1,3 +1,18 @@
+# World Orogen — versione D&D
+
+Fork personale di [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation) di Robert Aguilar (GPL-3.0), adattato per costruire mondi per campagne di D&D. Si apre da **generate.html**.
+
+Cosa cambia rispetto all'originale:
+
+- **Vista di base**: colori Antique, proiezione Van der Grinten, mappa invece del globo, hillshade attiva, nuvole spente, fiumi e laghi accesi e colorati per regime dal blu scuro al celeste.
+- **Generazione semplificata**: in vista restano Dettaglio, Continenti e Copertura di terra; il resto è in "Avanzate".
+- **Regni e città** (`js/realm/`): scegli quanti regni e quante città; vengono piazzati dove cibo, acqua dolce e porti si incontrano, e ogni regno è bilanciato per sfamarsi da solo. Per ogni regno c'è un riassunto: popolazione, cibo, come si nutre (agricoltura, pastorizia, caccia/pesca/raccolta), alimenti principali, clima e territorio.
+- **Sentieri e rotte**: strade che aggirano montagne, deserti e paludi, vie fluviali sui grandi fiumi e rotte marittime che tengono conto di venti, correnti, ghiaccio marino e mare aperto. Il tempo di viaggio è in giorni.
+- **Vista Politica** con regni, confini, città, sentieri e nomi; le città si possono spostare, aggiungere, togliere o promuovere a capitale, e tutto viene ricordato dal browser per ogni codice pianeta.
+- **Esportazione D&D**: mappa politica per il DM, mappa per i giocatori (con o senza nomi) e livello trasparente, in qualsiasi proiezione.
+
+---
+
 # World Orogen
 
 **Believable worlds from the ground up: a free studio of planet tools that gets you from a blank page to a world that

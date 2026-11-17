@@ -139,7 +139,7 @@
         <a href="/import" class="nav-tab">Import</a>
         <a href="/evolution" class="nav-tab">Evolution</a>
         <div class="nav-follow">
-            <a class="nav-icon" href="https://github.com/raguilar011095/planet_heightmap_generation" target="_blank" rel="noopener" title="Source code on GitHub" aria-label="Source code on GitHub"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#github"/></svg></a>
+            <a class="nav-icon" href="https://github.com/filfai1003/dnd-world-orogen" target="_blank" rel="noopener" title="Source code on GitHub (fork of World Orogen by Robert Aguilar, GPL-3.0)" aria-label="Source code on GitHub"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#github"/></svg></a>
             <span class="nav-follow-label">Follow</span>
             <a class="nav-icon" href="https://bsky.app/profile/did:plc:quknpdz3qcoid5uh4qv27w2t" target="_blank" rel="noopener" title="Follow on Bluesky for new releases and sneak peeks" aria-label="World Orogen on Bluesky"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#bluesky"/></svg></a>
             <a class="nav-icon" href="https://x.com/worldorogen" target="_blank" rel="noopener" title="Follow on X for new releases and sneak peeks" aria-label="World Orogen on X"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#x"/></svg></a>
@@ -193,7 +193,7 @@
         <div id="sidebarHeader">
             <div>
                 <h2>Generate</h2>
-                <div class="sub">A planet in seconds, shaped by hand</div>
+                <div class="sub">Un mondo per la tua campagna di D&amp;D</div>
             </div>
             <button id="sidebarToggle" title="Collapse panel" aria-label="Collapse panel" aria-expanded="true">&#x00AB;</button>
         </div>
@@ -209,6 +209,21 @@
                     <div class="detail-warn" id="detailWarn"></div>
                 </div>
                 <div class="cg">
+                    <label>Continents <span class="tip" data-tip="Target number of landmasses — 1 creates a supercontinent, higher values scatter land into multiple continents and archipelagos">?</span> <span class="v" id="vCn">4</span></label>
+                    <input type="range" id="sCn" min="1" max="10" value="4" step="1">
+                    <div class="slider-hint"><span>Supercontinent</span><span>Archipelago</span></div>
+                </div>
+                <div class="cg">
+                    <label>Land coverage <span class="tip" data-tip="Percentage of the planet covered by land — low values create ocean worlds, high values create large continents, whose interiors are far from the sea and drier">?</span> <span class="v" id="vLc">30%</span></label>
+                    <input type="range" id="sLc" min="0" max="1" value="0.3" step="0.01">
+                    <div class="slider-hint"><span>Ocean world</span><span>Desert world</span></div>
+                </div>
+            </div>
+        </details>
+        <details class="section is-plates">
+            <summary>Avanzate <span class="tip" data-tip="Le manopole della forma del pianeta: placche, irregolarità, rugosità e varietà dei continenti. Di solito non servono">?</span></summary>
+            <div class="section-body">
+                <div class="cg">
                     <label>Irregularity <span class="tip" data-tip="How randomly the cell points are scattered — 0 gives a uniform grid, 1 gives fully organic, irregular shapes">?</span> <span class="v" id="vJ">0.75</span></label>
                     <input type="range" id="sJ" min="0" max="1" value="0.75" step="0.05">
                     <div class="slider-hint"><span>Uniform</span><span>Scattered</span></div>
@@ -217,11 +232,6 @@
                     <label>Plates <span class="tip" data-tip="Number of tectonic plates — more plates means more boundaries where mountains, trenches, and coastlines form">?</span> <span class="v" id="vP">80</span></label>
                     <input type="range" id="sP" min="4" max="120" value="80" step="1">
                     <div class="slider-hint"><span>Few</span><span>Many</span></div>
-                </div>
-                <div class="cg">
-                    <label>Continents <span class="tip" data-tip="Target number of landmasses — 1 creates a supercontinent, higher values scatter land into multiple continents and archipelagos">?</span> <span class="v" id="vCn">4</span></label>
-                    <input type="range" id="sCn" min="1" max="10" value="4" step="1">
-                    <div class="slider-hint"><span>Supercontinent</span><span>Archipelago</span></div>
                 </div>
                 <div class="cg">
                     <label>Roughness <span class="tip" data-tip="Terrain roughness — higher values add more fractal detail to mountains and coastlines">?</span> <span class="v" id="vNs">0.40</span></label>
@@ -233,11 +243,6 @@
                     <input type="range" id="sCsv" min="0" max="1" value="0.35" step="0.05">
                     <div class="slider-hint"><span>Equal</span><span>Varied</span></div>
                 </div>
-                <div class="cg">
-                    <label>Land coverage <span class="tip" data-tip="Percentage of the planet covered by land — low values create ocean worlds, high values create large continents, whose interiors are far from the sea and drier">?</span> <span class="v" id="vLc">30%</span></label>
-                    <input type="range" id="sLc" min="0" max="1" value="0.3" step="0.01">
-                    <div class="slider-hint"><span>Ocean world</span><span>Desert world</span></div>
-                </div>
             </div>
         </details>
         <button id="generate">Build new world</button>
@@ -247,6 +252,31 @@
             <button id="loadBtn" title="Load planet from code">Load</button>
         </div>
         <div id="seedError">Invalid planet code</div>
+        <details class="section is-climate" id="realmSection" open>
+            <summary>Regni e città <span class="tip" data-tip="Regni, città e sentieri piazzati sul pianeta finito: le città dove cibo, acqua dolce e porti si incontrano, i regni cresciuti dalle capitali e bilanciati per sfamarsi da soli, i sentieri via terra, fiume e mare (con venti e correnti). Si vedono nella vista Politica">?</span></summary>
+            <div class="section-body">
+                <div class="cg">
+                    <label>Regni <span class="v" id="vRealmK">6</span></label>
+                    <input type="range" id="sRealmK" min="1" max="16" value="6" step="1">
+                </div>
+                <div class="cg">
+                    <label>Città in tutto <span class="tip" data-tip="Comprese le capitali: almeno una per regno">?</span> <span class="v" id="vRealmN">30</span></label>
+                    <input type="range" id="sRealmN" min="1" max="200" value="30" step="1">
+                </div>
+                <button id="realmBuild" class="realm-btn">Piazza regni e città</button>
+                <div class="realm-row">
+                    <button id="realmEdit" class="realm-btn" type="button">Modifica città</button>
+                    <button id="realmReset" class="realm-btn" type="button" title="Dimentica le modifiche a mano e piazza tutto di nuovo">Ricomincia</button>
+                </div>
+                <div id="realmEditHint" class="climate-hint" hidden>Trascina una città per spostarla · clic sul terreno vuoto per aggiungerne una · ★ nella lista per renderla capitale · Esc per finire</div>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmFills"><span class="toggle-track"><span class="toggle-thumb"></span></span>Colori dei regni</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmBorders"><span class="toggle-track"><span class="toggle-thumb"></span></span>Confini</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmRoutes"><span class="toggle-track"><span class="toggle-thumb"></span></span>Sentieri e rotte</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmNames"><span class="toggle-track"><span class="toggle-thumb"></span></span>Nomi</label>
+                <div id="realmStatus" class="climate-hint" hidden></div>
+                <div id="realmList" class="realm-list"></div>
+            </div>
+        </details>
         <details class="section is-land">
             <summary>Terrain sculpting <span class="tip" data-tip="Erosion and smoothing passes that refine the raw terrain. Adjust sliders and click Reapply — no full rebuild needed.">?</span></summary>
             <div class="section-body">

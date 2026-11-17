@@ -26,6 +26,7 @@ import { presentCrustLine } from './present-crust.js';
 import { plateColors, platesLegendHTML, INSPECT, inspectColors, drawPlateLines, platesMap } from './generate-plates.js';
 import { state } from './state.js';
 import { store, sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay, tutorial } from './page-chrome.js';
+import { Realm } from './realm/realm.js';
 
 setDelaunator(Delaunator);
 
@@ -35,18 +36,22 @@ const IS_TOUCH = state.isTouchDevice;
 // ── the page: the map's frame beside the globe's canvas, the canvas the window's, the bar over it ──
 if (!$('mapCanvas')) { const m = document.createElement('canvas'); m.id = 'mapCanvas'; m.hidden = true; $('canvas').after(m); }
 Object.assign($('canvas').style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh' });
-mountLayerBar({ comes: 'Comes a few seconds after the planet',
+mountLayerBar({ without: ['heightmap'], comes: 'Comes a few seconds after the planet',
     platesTip: 'The plates in their colours, each piece a shade of its own, the boundaries by kind and the motion as arrows — Ctrl-click (⌘-click on a Mac) a piece to raise or sink it, in any view' });
 // (the Inspect list: the world's past, per region)
 const inspectEl = $('debugLayer');
 
-const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location.search).get('gpu') !== '0', paletteKey: 'orogen.generate.palette',
+let realm = null;          // (D&D fork: set just below, once the view exists)
+const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location.search).get('gpu') !== '0', paletteKey: 'dnd.generate.palette',
     band: { below: document.getElementById('info'), gap: 24 },
     onChange: viewChanged, alive: (fin) => fin === world?.fin,
-    extraLines: (ctx, W, view) => drawPlateLines(ctx, W, view, world, { pending, hovered: hoveredPiece }),
-    extraLinesKey: (view) => `${world?.version ?? 0}|${view.layer === 'plates'}|${[...pending].join(',')}|${hoveredPiece}`,
+    extraLines: (ctx, W, view) => { drawPlateLines(ctx, W, view, world, { pending, hovered: hoveredPiece }); realm?.draw(ctx, W, view); },
+    extraLinesKey: (view) => `${world?.version ?? 0}|${view.layer === 'plates'}|${[...pending].join(',')}|${hoveredPiece}|${realm?.key(view) ?? ''}`,
     infoText: (mode) => (IS_TOUCH ? 'Drag to rotate · Pinch to zoom · Use edit button to reshape' : `Drag to ${mode === 'map' ? 'move the map' : 'rotate'} · Scroll to zoom · Ctrl-click (⌘-click on a Mac) to reshape continents`) });
 const view = pv.view;
+// (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
+realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });
+if (!IS_TOUCH) { $('viewMode').value = 'map'; $('viewMode').dispatchEvent(new Event('change')); }
 if (IS_TOUCH) $('info').textContent = 'Drag to rotate · Pinch to zoom · Use edit button to reshape';
 // (a touch screen wider than a phone — a tablet — keeps the edit button too: styles.css body.touch)
 if (IS_TOUCH) document.body.classList.add('touch');
@@ -122,6 +127,7 @@ function received(msg) {
     if (pv.gpu) pv.gpu.setMesh(w.tMesh);
     resetBuildButton();
     hideBuildOverlay();
+    realm.clear();
     if (kind === 'done') { snapshotSliders(); clearPending(); }
     updatePlanetCode(kind === 'editDone');
     reapplyBtn.classList.remove('spinning');
@@ -146,6 +152,7 @@ async function finish(w) {
         if (world !== w) return;
         w.fin = { cells: w.n, raster: res.raster, rivers: res.rivers, climate: res.climate, stats: res.stats };
         w.climateKey = `${$('sTmp').value}|${$('sPrc').value}`;
+        realm.setWorld(w);
         console.info(`[generate] finished in ${((performance.now() - started) / 1000).toFixed(1)} s`, Object.fromEntries(Object.entries(res.ms).map(([k, v]) => [k, +(v / 1000).toFixed(2)])));
     } catch (err) {
         if (err.name === 'AbortError' || world !== w) return;
@@ -198,6 +205,7 @@ function tick(now) {
     if (world && dirty) { dirty = false; paint(); }
     pv.updatePatch(now, world ? pv.shows(world.fin) : null, world?.fin, world?.seed);
     pv.render(now);
+    realm.drawScreen();
 }
 requestAnimationFrame(tick);
 
@@ -224,6 +232,7 @@ function readout(e) {
         const crust = presentCrustLine(pr, r);
         if (crust) head.push(`<span class="hi-label">Crust</span> ${crust}`);
     }
+    if (view.layer === 'realm') head.unshift(...realm.hoverLines(p, e));
     pv.hover(pv.readoutLines({ p, fin: pv.shows(w.fin), heightKm: w.heightKm[r], head, story: w.story, rec: w.regionCell[r] }));
 }
 function setHovered(piece) { if (piece !== hoveredPiece) { hoveredPiece = piece; dirty = true; } }
@@ -377,8 +386,10 @@ inspectEl?.addEventListener('change', () => { if (inspectEl.value) pv.setLayer(`
 const code = () => currentCode || (world ? String(world.seed) : '');
 // (and Generate's own row, the Plates: their colours, or each one's number — at the export's width and centre)
 const PLATES_ROW = { id: 'plates', label: 'Plates', colour: true, data: [{ key: 'plateId', suffix: 'id', label: 'Plate number', scale: DATA_SCALES.plateId, bits: 8 }], tip: 'The plates in their colours, the boundaries by kind (the Plates view without its arrows); as data, each plate’s number' };
-const CATALOGUE_WITH_PLATES = CATALOGUE.map((g) => (g.id === 'geology' ? { ...g, rows: [PLATES_ROW, ...g.rows] } : g));
+const CATALOGUE_WITH_PLATES = [{ id: 'dnd', label: 'D&D', rows: Realm.ROWS }, ...CATALOGUE.map((g) => (g.id === 'geology' ? { ...g, rows: [PLATES_ROW, ...g.rows] } : g))];
 function producePlates(rctx, job) {
+    const own = realm.produce(rctx, job);
+    if (own) return own;
     if (job.row.id !== 'plates' || !world) return null;
     const W = rctx.W, H = W >> 1, shift = rollShift(W, rctx.look.centerLon), colour = job.variant === 'colour';
     return { kind: colour ? 'rgba' : 'gray8', W, H, data: rollRows(platesMap(world, W, colour ? 'rgba' : 'id'), W, H, colour ? 4 : 1, shift) };
@@ -391,6 +402,8 @@ const exportPanel = initEvolutionExport({
     page: 'generate', titleNote: () => '', catalogue: CATALOGUE_WITH_PLATES, produceOwn: producePlates,
     names: (ctx, opts) => { const c = Math.round(opts.centerLon || 0); return { start: ['orogen', ctx.seed], end: [c ? `c${Math.abs(c)}${c > 0 ? 'E' : 'W'}` : null] }; },
     about: (ctx) => ({ page: 'Generate', planet: `planet code ${ctx.seed}`, link: `https://orogen.studio/generate#${ctx.seed}` }) });
+// (D&D fork: a hook to check the realm's maps from the console — window.__dnd.map(2048, 'dndPolitical') → { kind, W, H, data })
+window.__dnd = { realm, map: (W, id) => realm.produce({ W, fin: world.fin, look: { lut: heightLutOf(view.palette), exaggeration: pv.SHADING.exaggeration, water: view.water, riverQ: view.riverQ, byRegime: view.byRegime, centerLon: 0, shaded: true } }, { row: { id } }) };
 $('exportBtn').addEventListener('click', () => {
     if (world?.fin) { exportPanel.open(); return; }
     // (the maps come from the finished world: a few seconds after the planet)

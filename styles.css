@@ -1584,3 +1584,31 @@ body.edits-pending #hoverInfo { bottom: 112px; }
     #exportCard > *, #exportCard .xp > * { flex-shrink: 0; }
     .xp-layers { max-height: none; min-height: 0; overflow: visible; }
 }
+
+/* D&D fork — the "Regni e città" section (js/realm/realm.js) */
+.realm-btn {
+    width: 100%; padding: 8px; margin: 4px 0 8px;
+    background: none; color: var(--ui-body); border: 1px solid var(--ui-white-12); border-radius: 8px;
+    font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer;
+}
+.realm-btn:hover { border-color: var(--ui-white-25); background: var(--ui-white-04); }
+.realm-btn.active { border-color: var(--accent); color: var(--accent); }
+.realm-row { display: flex; gap: 8px; }
+#realmSection .toggle-label { font-size: 12px; color: var(--ui-label); margin: 4px 0; }
+.realm-list { margin-top: 8px; font-size: 12px; color: var(--ui-body); }
+.realm-k { border-top: 1px solid var(--ui-white-10); padding: 6px 0; }
+.realm-k > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; }
+.realm-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.realm-name { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--ui-ink); font: inherit; padding: 2px 4px; }
+.realm-name:hover, .realm-name:focus { border-color: var(--ui-white-12); }
+.realm-k > summary .realm-name { font-weight: 600; }
+.realm-facts { margin: 4px 0 6px 18px; line-height: 1.45; color: var(--ui-body); }
+.realm-facts b { color: var(--ui-label); font-weight: 600; }
+.realm-cities { list-style: none; margin: 0 0 0 12px; padding: 0; }
+.realm-cities li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 0; }
+.realm-meta { color: var(--ui-muted); font-size: 11px; }
+.realm-links { flex-basis: 100%; color: var(--ui-muted); font-size: 11px; padding-left: 24px; }
+.realm-cap, .realm-del { background: none; border: none; color: var(--ui-muted); cursor: pointer; font-size: 13px; padding: 0 2px; min-width: 18px; }
+.realm-cap.on { color: var(--gold-ink); }
+.realm-del:hover { color: var(--accent); }
+@media (max-width: 768px) { .realm-cap, .realm-del { min-width: 44px; min-height: 44px; } .realm-btn { min-height: 44px; } }

@@ -77,10 +77,10 @@ export function mountLayerBar({ comes = 'Comes with Add detail', platesTip = '',
             </optgroup>
             </select></span>
             <label class="toggle-label" title="Shade the planet by its relief, lit from the north-west. Off, every view is flat colour, the mountains shown by their colours alone and no sun glinting on the sea (a texture to light in a 3D program; the export has its own Hillshade switch)"><input type="checkbox" id="chkShade" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Hillshade</label>
-            <label class="toggle-label" title="Clouds over the planet, from its climate — more where it rains, fewer under the dry highs — drifting slowly with the winds. On the Satellite view; the export has a Clouds layer and Satellite with clouds"><input type="checkbox" id="chkClouds" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Clouds</label>
+            <label class="toggle-label" title="Clouds over the planet, from its climate — more where it rains, fewer under the dry highs — drifting slowly with the winds. On the Satellite view; the export has a Clouds layer and Satellite with clouds"><input type="checkbox" id="chkClouds"><span class="toggle-track"><span class="toggle-thumb"></span></span>Clouds</label>
             <span class="vs-item" id="waterGroup">
                 <label class="toggle-label"><input type="checkbox" id="chkWater" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Rivers &amp; lakes</label>
-                <label class="toggle-label" id="regimeRow" title="Colour the rivers by their year — each month's rain and snowmelt, run down the rivers: blue, permanent; violet, permanent with a yearly flood season (the Nile's, from rains far upstream; a snowmelt flood); cyan, seasonal — dry some months; brown, dry most of the year. Hover a river for its flood months"><input type="checkbox" id="chkRegime"><span class="toggle-track"><span class="toggle-thumb"></span></span>By regime</label>
+                <label class="toggle-label" id="regimeRow" title="Colour the rivers by their year — each month's rain and snowmelt, run down the rivers: from dark blue to light sky blue: dark blue, permanent; blue, permanent with a yearly flood season (the Nile's, from rains far upstream; a snowmelt flood); light blue, seasonal — dry some months; sky blue, dry most of the year. Hover a river for its flood months"><input type="checkbox" id="chkRegime" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>By regime</label>
                 <span class="vs-item" id="riverDensityGroup" title="Which rivers are drawn, by how much water they carry: Few — 150 m³/s and more; Normal — 40 m³/s; Many — 8 m³/s. The bigger a river, the stronger its line; seasonal rivers are dashed, and those dry most of the year dotted"><select id="riverDensity">
                 <option value="150">Few</option>
                 <option value="40" selected>Normal</option>
@@ -92,6 +92,7 @@ export function mountLayerBar({ comes = 'Comes with Add detail', platesTip = '',
             <button type="button" id="viewFold" class="vs-fold" aria-controls="viewStrip" aria-expanded="false" aria-label="View options" title="View options: globe or map, projection, grid lines, colours, hillshade, rivers"><svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3.5 1.5 7 5 3.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <div class="map-tabs" id="mapTabs">
                 <button class="map-tab active" data-layer="terrain">Terrain</button>
+                <button class="map-tab" data-layer="realm" title="Regni, confini, città e sentieri, sopra il terreno. Si impostano nella sezione Regni e città">Politica</button>
                 <button class="map-tab" data-layer="satellite" title="The planet as from space: each climate's colours climbing with the land to rock and snow, rivers and fresh lakes greening dry country, snow and ice from its climate, its clouds from its climate too (the Clouds toggle hides them), for the year, January or July. ${esc(comes)}">Satellite</button>
                 <button class="map-tab" data-layer="climate" title="The moment's climate: Köppen zones, temperature, rain, winds and currents — and under More, pressure, upwelling, ice, aridity and more">Climate</button>
                 <button class="map-tab" data-layer="geology" title="What the history left in the rock: its rocks, its ore, fuel and mineral deposits and what each technological age could reach. ${esc(comes)}">Geology</button>
@@ -138,6 +139,7 @@ export function mountLayerBar({ comes = 'Comes with Add detail', platesTip = '',
         <div id="climateChip" class="evo-chip" hidden><span id="climateChipText"></span><button id="climateChipBtn">Calculate</button></div>`;
     $('mobileViewSwitch').innerHTML = `
         <option value="terrain">Terrain</option>
+        <option value="realm">Politica</option>
         <option value="satellite">Satellite</option>
         <option value="heightmap">Heightmap</option>
         <option value="plates">Plates</option>

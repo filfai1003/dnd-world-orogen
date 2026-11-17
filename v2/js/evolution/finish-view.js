@@ -248,12 +248,13 @@ const STRENGTH_ALPHA = [0.35, 0.5, 0.65, 0.8, 0.92], STRENGTH_WIDTH = [0.45, 0.5
 const regimeAt = (R, i) => R.regime[i];
 /** How each regime is drawn: its strength and dashes, and its colour when the rivers are coloured by regime (else all the
  *  rivers' blue). */
-const RIVER_RGB = 'rgb(30, 90, 210)';
+// (D&D fork: the regimes on one ramp, dark blue to light sky blue — the wetter the river's year, the darker)
+const RIVER_RGB = 'rgb(16, 46, 120)';
 export const REGIME_STYLE = [
     { alpha: 1, dash: null, rgb: RIVER_RGB, name: 'Permanent' },
-    { alpha: 1, dash: null, rgb: 'rgb(190, 50, 180)', name: 'Yearly flood season' },
-    { alpha: 0.85, dash: [3.5, 1.5], rgb: 'rgb(0, 200, 225)', name: 'Seasonal' },
-    { alpha: 0.7, dash: [1.1, 1.6], rgb: 'rgb(185, 105, 30)', name: 'Dry most of the year' },
+    { alpha: 1, dash: null, rgb: 'rgb(28, 92, 168)', name: 'Yearly flood season' },
+    { alpha: 0.85, dash: [3.5, 1.5], rgb: 'rgb(56, 150, 210)', name: 'Seasonal' },
+    { alpha: 0.7, dash: [1.1, 1.6], rgb: 'rgb(125, 200, 235)', name: 'Dry most of the year' },
 ];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** A river point's year in words: "permanent · floods Aug–Oct · fed from far upstream". */

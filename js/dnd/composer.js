@@ -306,8 +306,17 @@ export class Composer {
                 return p[0] * cam[0] + p[1] * cam[1] + p[2] * cam[2] <= 1.02 ? null : fv.toScreen(p);
             } };
         }
-        const P = PROJ[fv.id], box = this.pv.globe.mapBox?.();
-        return { key: `m|${fv.key}`, clip: box, at: (u, v) => {
+        // (the clip: the map as zoomed and panned, within the frame it shows in — not the unzoomed box, which cut the
+        // overlays off part-way across a zoomed map)
+        const P = PROJ[fv.id], gl = this.pv.globe, box = gl.mapBox?.(), mv = gl.mapView ?? { zoom: 1, panX: 0, panY: 0 };
+        let clip = box;
+        if (box) {
+            const zl = box.left + box.width / 2 + (-0.5 - mv.panX) * box.width * mv.zoom, zt = box.top + box.height / 2 + (-0.5 - mv.panY) * box.height * mv.zoom;
+            const fr = gl.map?.frame?.getBoundingClientRect?.() ?? { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+            const L = Math.max(zl, fr.left), T = Math.max(zt, fr.top), Rr = Math.min(zl + box.width * mv.zoom, fr.right - ((typeof window !== 'undefined' && window.__openRight) || 0)), B = Math.min(zt + box.height * mv.zoom, fr.bottom);
+            clip = { left: L, top: T, width: Math.max(0, Rr - L), height: Math.max(0, B - T) };
+        }
+        return { key: `m|${fv.key}`, clip, jump: box ? box.width * mv.zoom / 4 : innerWidth / 4, at: (u, v) => {
             let lon = u * 2 * Math.PI - Math.PI - fv.centre;
             lon = ((lon + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
             const xy = P.fwd(lon, (0.5 - v) * Math.PI, fv.opts);
@@ -329,7 +338,7 @@ export class Composer {
         ctx.save();
         const clip = pr.clip;
         if (clip) { ctx.beginPath(); ctx.rect(clip.left, clip.top, clip.width, clip.height); ctx.clip(); }
-        const jump = clip ? clip.width / 4 : innerWidth / 4;
+        const jump = pr.jump ?? innerWidth / 4;
         const line = (pts) => {
             let prev = null;
             for (const p of pts) {

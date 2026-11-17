@@ -17,9 +17,19 @@ const hexRgb = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const krgb = (k) => (/^#[0-9a-f]{6}$/i.test(CHOSEN[k] ?? '') ? hexRgb(CHOSEN[k]) : KINGDOM_RGB[k % KINGDOM_RGB.length]);
 const khex = (k) => '#' + krgb(k).map(v => v.toString(16).padStart(2, '0')).join('');
 const kcol = (k, a = 1) => { const c = krgb(k); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
-/** The climates a kingdom's people can prefer (realm-worker.js PREFS): its capital stands in it. */
-const CLIMATES = [['', 'Any climate'], ['tropical', 'Tropical'], ['desert', 'Desert'], ['steppe', 'Steppe'], ['mediterranean', 'Mediterranean'],
-    ['temperate', 'Temperate'], ['continental', 'Continental'], ['taiga', 'Taiga'], ['tundra', 'Tundra'], ['highlands', 'Highlands']];
+/** Where a kingdom's people like to live (realm-worker.js wishes): its capital stands where the most of these hold. */
+const WISHES = [
+    ['climate', 'Climate', [['', 'Any climate'], ['tropical', 'Tropical'], ['desert', 'Desert'], ['steppe', 'Steppe'], ['mediterranean', 'Mediterranean'],
+        ['temperate', 'Temperate (humid)'], ['continental', 'Continental'], ['taiga', 'Taiga'], ['tundra', 'Tundra']]],
+    ['temp', 'Temperature', [['', 'Any'], ['hot', 'Hot (over 20 °C)'], ['warm', 'Warm (13–22 °C)'], ['mild', 'Mild (7–15 °C)'], ['cool', 'Cool (0–9 °C)'], ['cold', 'Cold (under 2 °C)']]],
+    ['rain', 'Humidity', [['', 'Any'], ['arid', 'Arid (under 250 mm)'], ['dry', 'Dry (250–600 mm)'], ['moderate', 'Moderate (600–1200 mm)'], ['wet', 'Wet (over 1200 mm)']]],
+    ['sea', 'Sea', [['', 'Any'], ['coast', 'Maritime, on the coast'], ['inland', 'Inland']]],
+    ['height', 'Height', [['', 'Any'], ['low', 'Lowlands (under 300 m)'], ['hills', 'Hills (250–1000 m)'], ['high', 'Highlands (over 900 m)']]],
+    ['mountains', 'Mountains', [['', 'Any'], ['near', 'Near high mountains'], ['far', 'Far from mountains']]],
+    ['river', 'River', [['', 'Any'], ['yes', 'On a big river']]],
+    ['waters', 'Seas', [['', 'Any'], ['calm', 'Calm seas'], ['rough', 'Rough, stormy seas']]],
+];
+const wishText = (p) => WISHES.map(([key, , opts]) => (p?.[key] ? opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '') : null)).filter(Boolean).join(' · ');
 
 const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
 const STAPLE_IT = ['Nothing', 'Paddy grain (rice)', 'Cool-climate grain (wheat, barley, rye)', 'Warm-climate grain (maize, millet, sorghum)', 'Roots and tubers', 'Livestock (milk, meat, wool)', 'Fish', 'Game and wild fruit'];
@@ -31,7 +41,7 @@ export class Realm {
     constructor({ pv, onChange, getCode }) {
         this.pv = pv; this.onChange = onChange; this.getCode = getCode;
         this.world = null; this.data = null; this.version = 0; this.busy = false; this.ready = false; this.reqId = 0;
-        this.names = { kingdoms: [], cities: [], colors: [], climates: [] };
+        this.names = { kingdoms: [], cities: [], colors: [], prefs: [] };
         // (the kingdoms only coloured: never a border line)
         this.show = { fills: true, borders: false, routes: true, names: true };
         this.editing = false; this.drag = null;
@@ -42,6 +52,43 @@ export class Realm {
         this.worker.onmessage = ({ data }) => this.received(data);
         this.worker.onerror = (e) => this.status(`Error working out the kingdoms: ${e.message}`);
         this.wire();
+        // (a campaign's kingdoms from the address: ?realm=… — base64url JSON { cities, kingdoms: [{ name, color, climate, cities: [names] }] })
+        try { const r = new URLSearchParams(location.search).get('realm'); if (r) this.preset = JSON.parse(decodeURIComponent(escape(atob(r.replace(/-/g, '+').replace(/_/g, '/'))))); } catch (err) { console.warn('[realm] unreadable preset', err); }
+        // (else the campaign last set up: its peoples kept from world to world, and from visit to visit)
+        if (!this.preset) {
+            let c = null; try { c = JSON.parse(localStorage.getItem('dnd-campaign') || 'null'); } catch { /* */ }
+            if (c?.kingdoms?.length) {
+                this.names = { kingdoms: c.kingdoms, colors: c.colors || [], prefs: c.prefs || [], towns: c.towns || [], cities: [] };
+                $('sRealmK').value = String(c.kingdoms.length); $('sRealmK').dispatchEvent(new Event('input'));
+                if (c.N) { $('sRealmN').value = String(c.N); $('sRealmN').dispatchEvent(new Event('input')); }
+            }
+        }
+    }
+    /** The campaign's peoples — names, colours, wishes, towns' names, how many cities — kept for every world to come. */
+    saveCampaign() {
+        const n = this.names;
+        try { localStorage.setItem('dnd-campaign', JSON.stringify({ kingdoms: n.kingdoms, colors: n.colors, prefs: n.prefs, towns: n.towns || [], N: +$('sRealmN').value })); } catch { /* */ }
+    }
+    /** The map's centre turned to the land (a new world's continents in the middle of the map). */
+    centreOnLand() {
+        const o = this.data?.owner; if (!o) return;
+        let sx = 0, sy = 0;
+        for (let c = 0; c < o.length; c++) if (o[c] >= 0) { const a = ((c % GW) + 0.5) / GW * 2 * Math.PI - Math.PI; sx += Math.cos(a); sy += Math.sin(a); }
+        if (!sx && !sy) return;
+        const sl = $('sMapCenterLon'); if (!sl) return;
+        sl.value = String(Math.round(Math.atan2(sy, sx) * 180 / Math.PI));
+        sl.dispatchEvent(new Event('input')); sl.dispatchEvent(new Event('change'));
+    }
+    /** The preset's kingdoms set (their names, colours, climates and towns' names), and the address cleared of it. */
+    applyPreset(p) {
+        const K = Math.min(16, Math.max(1, p.kingdoms?.length || 1));
+        $('sRealmK').value = String(K); $('sRealmK').dispatchEvent(new Event('input'));
+        if (p.cities) { $('sRealmN').value = String(Math.max(K, p.cities)); $('sRealmN').dispatchEvent(new Event('input')); }
+        const ks = p.kingdoms.slice(0, K);
+        this.names = { kingdoms: ks.map(k => k.name || ''), colors: ks.map(k => k.color || ''), prefs: ks.map(k => ({ ...(k.climate ? { climate: k.climate } : {}), ...(k.prefs || {}) })), towns: ks.map(k => k.cities || []), cities: [] };
+        this.preset = null;
+        const q = new URLSearchParams(location.search); q.delete('realm');
+        history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}${location.hash}`);
     }
 
     // ── the sidebar section ──
@@ -68,7 +115,7 @@ export class Realm {
             if (t.dataset.cname !== undefined) { this.names.cities[+t.dataset.cname] = t.value; this.changed(false); this.save(); }
             if (t.dataset.kcol !== undefined) { this.setColor(+t.dataset.kcol, t.value); this.save(); this.renderList(); }
             // (a climate chosen: the kingdoms placed again, each in its own)
-            if (t.dataset.kclim !== undefined) { this.names.climates[+t.dataset.kclim] = t.value; this.save(); this.auto(); }
+            if (t.dataset.kpref !== undefined) { const p = this.names.prefs[+t.dataset.kpref]; if (t.value) p[t.dataset.key] = t.value; else delete p[t.dataset.key]; this.save(); this.auto(); }
         });
         list.addEventListener('input', (e) => { if (e.target.dataset.kcol !== undefined) this.setColor(+e.target.dataset.kcol, e.target.value); });
         list.addEventListener('click', (e) => {
@@ -132,7 +179,9 @@ export class Realm {
     fitNames(K) {
         const n = this.names;
         n.colors = Array.from({ length: K }, (_, k) => n.colors?.[k] || '');
-        n.climates = Array.from({ length: K }, (_, k) => n.climates?.[k] || '');
+        // (older saves kept a climate alone)
+        n.prefs = Array.from({ length: K }, (_, k) => n.prefs?.[k] || (n.climates?.[k] ? { climate: n.climates[k] === 'highlands' ? '' : n.climates[k], ...(n.climates[k] === 'highlands' ? { height: 'high' } : {}) } : {}));
+        delete n.climates;
         n.kingdoms = Array.from({ length: K }, (_, k) => n.kingdoms?.[k] || `Kingdom ${k + 1}`);
         CHOSEN = n.colors; this.fillFor = null;
     }
@@ -146,7 +195,7 @@ export class Realm {
     clear() { this.world = null; this.data = null; this.ready = false; this.changed(); this.status('The kingdoms come once the planet is finished (climate, rivers and food)…'); }
     setWorld(w) {
         if (!w?.fin) return;
-        this.world = w; this.data = null; this.ready = false; this.landMask = null;
+        this.world = w; this.data = null; this.ready = false; this.landMask = null; this.recentre = true;
         this.status('Reading the land, the climate and the food…');
         // (a moment for the status to show before the grid's work holds the page)
         setTimeout(() => {
@@ -155,7 +204,8 @@ export class Realm {
             try { grid = realmGrid(w.fin); } catch (err) { console.error(err); this.status(`Could not read the planet: ${err.message}`); return; }
             this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES } });
             const kept = this.load();
-            if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.request({ cmd: 'fixed', cities: kept.cities }); }
+            if (this.preset) { this.applyPreset(this.preset); this.auto(); }
+            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, cities: kept.cities }); }
             else this.auto();
         }, 30);
     }
@@ -165,12 +215,13 @@ export class Realm {
         const K = +$('sRealmK').value;
         this.names.cities = [];
         this.fitNames(K);
-        this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.climates });
+        this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.prefs, mins: (this.names.towns || []).map(t => Math.max(0, (t?.length || 0) - 1)) });
+        this.named = false;                            // (the towns' names, if any, given to the new cities)
     }
     /** The realm again from the cities as they stand (moved, added, removed, a capital changed). */
     fixed() {
         if (!this.data) return;
-        this.request({ cmd: 'fixed', cities: this.data.cities.map(c => ({ u: c.u, v: c.v, capital: c.capital })) });
+        this.request({ cmd: 'fixed', prefs: this.names.prefs, cities: this.data.cities.map(c => ({ u: c.u, v: c.v, capital: c.capital })) });
     }
     request(msg) {
         this.busy = true; msg.id = ++this.reqId;
@@ -185,6 +236,15 @@ export class Realm {
         this.data = m; this.ready = true;
         // (names: a kingdom by its index, a city by its place in the list — kept as they were where they still exist)
         this.fitNames(m.K);
+        if (this.named === false && this.names.towns?.length) {
+            this.names.cities = [];
+            for (let k = 0; k < m.K; k++) {
+                const own = m.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].capital - a[0].capital) || (b[0].people - a[0].people));
+                (this.names.towns[k] || []).forEach((t, j) => { if (own[j] && t) this.names.cities[own[j][1]] = t; });
+            }
+        }
+        this.named = true;
+        if (this.recentre) { this.recentre = false; this.centreOnLand(); }
         this.names.cities = m.cities.map((c, i) => this.names.cities[i] || (c.capital ? `Capital ${this.romanOf(c.kingdom)}` : `City ${i + 1}`));
         this.status(`${m.K} kingdoms, ${m.cities.length} cities, ${m.routes.length} links · ${(m.ms / 1000).toFixed(1)} s`);
         this.drawCache = null;
@@ -197,6 +257,7 @@ export class Realm {
     // ── kept in the browser, per planet code ──
     storeKey() { const c = this.getCode(); return c ? `dnd-realm:${c}` : null; }
     save() {
+        this.saveCampaign();
         const k = this.storeKey(); if (!k || !this.data) return;
         try { localStorage.setItem(k, JSON.stringify({ cities: this.data.cities.map(c => ({ u: +c.u.toFixed(5), v: +c.v.toFixed(5), capital: c.capital })), names: this.names })); } catch { /* (kept only where the browser allows) */ }
     }
@@ -221,14 +282,16 @@ export class Realm {
             const links = (i) => d.routes.filter(r => r.a === i || r.b === i).map(r => { const o = r.a === i ? r.b : r.a; const by = r.modes.some(m => m === 2) ? 'by sea' : r.modes.some(m => m === 1) ? 'by river' : 'on foot'; return `${esc(this.names.cities[o] ?? '')} ${r.days.toFixed(0)} d ${by}`; }).join(' · ');
             const open = this.openK.has(k);
             return `<div class="realm-k${open ? ' open' : ''}">
-                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"><select class="realm-clim" data-kclim="${k}" title="The climate its people prefer: its capital stands in it" aria-label="Preferred climate">${CLIMATES.map(([v, l]) => `<option value="${v}"${(this.names.climates[k] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
-                ${open ? `<div class="realm-facts">
+                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"></div>
+                <div class="realm-wish-sum">${esc(wishText(this.names.prefs[k])) || 'Anywhere'}</div>
+                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change">${WISHES.map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${(this.names.prefs[k]?.[key] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div>
+                <div class="realm-facts">
                     <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
                     <div><b>How it eats</b> ${lives || '—'}</div>
                     <div><b>Staple foods</b> ${staples || '—'}</div>
                     <div><b>Climate</b> ${climate || '—'}</div>
-                    <div><b>Land</b> mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km${K.wild > 0 ? ` · wilds ${pct(K.wild, K.area)}%` : ''}</div>
+                    <div><b>Land</b> mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km${K.wild > 0 ? ` · barren ${pct(K.wild, K.area)}%` : ''}</div>
                 </div>
                 <ul class="realm-cities">${towns.map(([c, i]) => `<li>
                     <button type="button" data-act="capital" data-i="${i}" class="realm-cap${c.capital ? ' on' : ''}" title="${c.capital ? 'Capital (click: no longer a capital)' : 'Make it a capital: a new kingdom is born'}">★</button>

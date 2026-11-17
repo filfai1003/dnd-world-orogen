@@ -47,6 +47,7 @@ export function mountLayerBar({ comes = 'Comes with Add detail', platesTip = '',
             <label class="toggle-label" data-view="globe"><input type="checkbox" id="chkRotate"><span class="toggle-track"><span class="toggle-thumb"></span></span>Auto-rotate</label>
             <label class="toggle-label" data-view="globe" title="The globe in space, with stars, instead of on the page"><input type="checkbox" id="chkSpace"><span class="toggle-track"><span class="toggle-thumb"></span></span>Stars</label>
             <label class="toggle-label"><input type="checkbox" id="chkGrid" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Grid lines</label>
+            <label class="toggle-label" title="The latitude and longitude numbers round the map"><input type="checkbox" id="chkDegrees" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Degrees</label>
             <span class="vs-item" id="gridSpacingGroup"><select id="gridSpacing" aria-label="Grid spacing">
                 <option value="30">30&deg;</option>
                 <option value="15" selected>15&deg;</option>

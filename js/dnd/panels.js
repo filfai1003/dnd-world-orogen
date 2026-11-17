@@ -63,6 +63,14 @@ export function dockLayout(pv, composer) {
 
 /** The view options trimmed, and the look a campaign map keeps. */
 export function trimView(pv) {
+    // (the degrees' numbers round the map: on or off, remembered)
+    const deg = $('chkDegrees');
+    if (deg) {
+        let on = true; try { on = localStorage.getItem('dnd.degrees') !== '0'; } catch { /* */ }
+        const set = (v) => { document.body.classList.toggle('dnd-no-degrees', !v); try { localStorage.setItem('dnd.degrees', v ? '1' : '0'); } catch { /* */ } };
+        deg.checked = on; set(on);
+        deg.addEventListener('change', () => set(deg.checked));
+    }
     const hide = (el) => el?.classList.add('dnd-hidden');
     for (const id of ['chkRotate', 'chkSpace', 'chkShade', 'chkClouds', 'chkRegime']) hide($(id)?.closest('label'));
     for (const id of ['paletteGroup', 'riverDensityGroup', 'mapTabs', 'subBar', 'mobileViewSwitch', 'gridSpacingGroup', 'viewFold']) hide($(id));

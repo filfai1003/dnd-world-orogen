@@ -1599,10 +1599,14 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-k { border-top: 1px solid var(--ui-white-10); padding: 6px 0; }
 .realm-k-head { display: flex; align-items: center; gap: 6px; }
 .realm-k-head .realm-name { font-weight: 600; }
+.realm-wish-sum { margin: 0 0 0 48px; font: 400 11px/1.3 var(--font-ui); color: var(--muted); }
+.realm-wishes { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin: 6px 0 6px 18px; font: 400 11px/1.2 var(--font-ui); color: var(--muted); }
+.realm-wishes label { display: contents; }
+.realm-wishes .realm-clim { max-width: none; width: 100%; }
 .realm-color { width: 22px; height: 22px; padding: 0; border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); background: none; cursor: pointer; flex: none; }
 .realm-color::-webkit-color-swatch-wrapper { padding: 2px; }
 .realm-color::-webkit-color-swatch { border: none; border-radius: 5px; }
-.realm-clim { flex: none; max-width: 112px; height: 24px; min-height: 0; width: auto; font: 400 11px/1.2 var(--font-ui); color: var(--body); background: var(--bg); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); padding: 2px 4px; }
+.realm-clim { flex: none; max-width: 170px; height: 24px; min-height: 0; width: auto; font: 400 11px/1.2 var(--font-ui); color: var(--body); background: var(--bg); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); padding: 2px 4px; }
 .realm-fold { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; width: 18px; padding: 0; flex: none; }
 .realm-fold:hover { color: var(--ink); }
 .realm-build { margin-top: var(--space-1); }
@@ -1742,3 +1746,6 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .dnd-dock.in-sheet .dnd-rail { flex-direction: row; flex-wrap: wrap; justify-content: center; box-shadow: none; }
 .dnd-dock.in-sheet .dnd-rail-sep { width: 0; height: 26px; border-top: none; border-left: var(--line-hair) solid var(--rule); }
 .dnd-dock.in-sheet .dnd-fly { width: auto; max-height: none; box-shadow: none; }
+
+/* D&D fork: the degrees' numbers round the map, switched off (js/dnd/panels.js) */
+body.dnd-no-degrees .gf-num { display: none; }

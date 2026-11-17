@@ -19,6 +19,7 @@ export function realmGrid(fin) {
     const land = new Uint8Array(n), lake = new Uint8Array(n), heightM = new Float32Array(n), peakM = new Float32Array(n);
     const koppen = new Uint8Array(n), riverQ = new Float32Array(n), wetland = new Float32Array(n);
     const people = new Float32Array(n), lifestyle = new Uint8Array(n), staple = new Uint8Array(n);
+    const tempC = new Float32Array(n).fill(NaN), rainMm = new Float32Array(n).fill(NaN);
     const windU = new Float32Array(n), windV = new Float32Array(n), curU = new Float32Array(n), curV = new Float32Array(n), seaIce = new Float32Array(n);
 
     // ── the ground: land share, lakes and heights, from the finished picture (a few samples a cell) ──
@@ -50,7 +51,12 @@ export function realmGrid(fin) {
         const lat = 90 - (y + 0.5) / GH * 180;
         for (let x = 0; x < GW; x++) {
             const c = y * GW + x;
-            if (L) { const i = Math.min(L.h - 1, Math.floor((y + 0.5) / GH * L.h)) * L.w + Math.min(L.w - 1, Math.floor((x + 0.5) / GW * L.w)); koppen[c] = L.koppen[i]; }
+            if (L) {
+                const i = Math.min(L.h - 1, Math.floor((y + 0.5) / GH * L.h)) * L.w + Math.min(L.w - 1, Math.floor((x + 0.5) / GW * L.w));
+                koppen[c] = L.koppen[i];
+                if (L.tAnnual && L.tAnnual[i] !== -32768) tempC[c] = L.tAnnual[i] / 100;
+                if (L.pAnnual) rainMm[c] = L.pAnnual[i];
+            }
             if (!land[c] || !F) continue;
             const i = Math.min(F.h - 1, Math.floor((y + 0.5) / GH * F.h)) * F.w + Math.min(F.w - 1, Math.floor((x + 0.5) / GW * F.w));
             if (koppen[c] === KOPPEN_ID_EF) continue;
@@ -85,7 +91,7 @@ export function realmGrid(fin) {
         }
     }
 
-    return { GW, GH, land, lake, heightM, peakM, koppen, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
+    return { GW, GH, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
 }
 const KOPPEN_ID_EF = KOPPEN_CLASSES.findIndex(k => k.code === 'EF');
 /** The Köppen codes by index (the worker reads the letters). */

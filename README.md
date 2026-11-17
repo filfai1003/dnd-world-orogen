@@ -1,15 +1,16 @@
-# World Orogen — versione D&D
+# World Orogen — D&D edition
 
-Fork personale di [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation) di Robert Aguilar (GPL-3.0), adattato per costruire mondi per campagne di D&D. Si apre da **generate.html**.
+A personal fork of [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation) by Robert Aguilar (GPL-3.0), adapted to build worlds for D&D campaigns. Two tools: **Generate** (generate.html) and **Import** (import.html, your own heightmap). Evolution is not part of this fork.
 
-Cosa cambia rispetto all'originale:
+What changes from the original:
 
-- **Pannello sinistro**: solo la generazione: dettaglio, continenti e terre emerse con *Genera mondo*; numero di regni e città con *Genera regni* (ogni slider ha un campo per scrivere il valore; gli altri comandi sono nascosti per ora). **A destra**: solo la visualizzazione, in una colonna di icone; i pannelli che apre si posano sopra la mappa senza spostarla.
-- **Mappa componibile**: una base (Terreno antico, Satellite, Temperatura per anno/gennaio/luglio con il mare tutto blu, Fertilità con terre coltivabili, aridità o stagione di crescita) e sopra, sommabili, la Politica, i Venti o le Correnti marine, e la Geologia materiale per materiale (zone probabili e giacimenti più ricchi).
-- **Mouse**: il tasto sinistro gira la mappa in longitudine (o il globo), il tasto centrale sposta la vista, la rotella fa lo zoom; i gradi si possono anche scrivere in alto. Doppio clic su una città o un regno per cambiarne il nome (anche dalla lista, dove i regni partono chiusi). Van der Grinten, rilievo sempre acceso, nuvole spente, fiumi per regime dal blu scuro al celeste.
-- **Regni e città** (`js/realm/`): piazzati dove cibo, acqua dolce e porti si incontrano, bilanciati per sfamarsi da soli, con un riassunto per regno; nomi modificabili; ricordati dal browser per ogni codice pianeta.
-- **Sentieri e rotte**: strade, vie fluviali e rotte marittime che tengono conto di venti, correnti, ghiaccio e mare aperto, con le frecce della corrente lungo le rotte; tempi in giorni.
-- **Esportazione**: salva la mappa esattamente come è composta, nella proiezione scelta.
+- **Left panel**: generation only. Generate: detail, continents and land coverage with *Generate world*; Import: your heightmap and its detail with *Import*. Both: the number of kingdoms and cities with *Generate kingdoms* (each slider has a box to type its value; the other controls are hidden for now).
+- **Right side**: visualisation only, in a rail of icons; the panels it opens lie over the map without moving it.
+- **Composable map**: a base (antique Terrain, Satellite, Temperature for the year/January/July with the sea all blue, Fertility with farmland, aridity or growing season) and, stacked over it, Politics, Winds or Sea currents, and Geology material by material (likely zones and the richest deposits; Generate only).
+- **Mouse**: the left button turns the map in longitude (or the globe), the middle button moves the view, the wheel zooms; the centre's degrees can also be typed at the top. Double-click a city or a kingdom to rename it (or type over its name in the list, where the kingdoms start folded). Van der Grinten, hillshade always on, no clouds, rivers by regime from dark blue to sky blue.
+- **Kingdoms and cities** (`js/realm/`): placed where food, fresh water and harbours meet, balanced to feed themselves, with a summary per kingdom; names editable; kept by the browser per planet code (or per imported image).
+- **Roads and routes**: roads, river ways and sea routes that account for winds, currents, ice and the open sea, with the current's arrows along the sea routes; times in days.
+- **Export**: saves the map exactly as composed, in the chosen projection.
 
 ---
 

@@ -19,6 +19,9 @@ import { detailFromSlider } from './detail-scale.js';
 import { showBuildError, describeFailure, holdControls } from './build-error.js';
 import { state } from './state.js';
 import { sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay } from './page-chrome.js';
+import { Realm } from './realm/realm.js';
+import { Composer, ownLayers } from './dnd/composer.js';
+import { sliderBoxes, dockLayout, trimView } from './dnd/panels.js';
 
 setDelaunator(Delaunator);
 
@@ -30,12 +33,27 @@ if (!$('mapCanvas')) { const m = document.createElement('canvas'); m.id = 'mapCa
 Object.assign($('canvas').style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh' });
 mountLayerBar({ comes: 'Comes a few seconds after the heightmap', without: ['plates', 'geology'] });
 
-const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location.search).get('gpu') !== '0', paletteKey: 'orogen.import.palette',
+// (D&D fork: the same right side and kingdoms as Generate — the view options always open, the composer's rail, the realm)
+try { localStorage.setItem('orogen.view-strip-open', '1'); } catch { /* (where the browser allows) */ }
+let realm = null, composer = null, importKey = '';
+const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location.search).get('gpu') !== '0', paletteKey: 'dnd.import.palette', ownLayers,
     band: { below: document.getElementById('info'), gap: 24 },
     onChange: () => { dirty = true; updateChip(); }, alive: (fin) => fin === world?.fin,
-    infoText: (mode) => (IS_TOUCH ? 'Drag to rotate · Pinch to zoom' : `Drag to ${mode === 'map' ? 'move the map' : 'rotate'} · Scroll to zoom`) });
+    extraLines: (ctx, W, view) => { composer?.draw(ctx, W, view); realm?.draw(ctx, W, view); },
+    extraLinesKey: (view) => `${world?.version ?? 0}|${realm?.key(view) ?? ''}|${composer?.key() ?? ''}`,
+    infoText: (mode) => (IS_TOUCH ? 'Drag to turn · Pinch to zoom' : `Drag to turn the ${mode === 'map' ? 'map' : 'globe'} · Middle button to move it · Scroll to zoom · Double-click a name to rename it`) });
 const view = pv.view;
-$('info').textContent = IS_TOUCH ? 'Drag to rotate · Pinch to zoom' : 'Drag to rotate · Scroll to zoom';
+realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => importKey });
+trimView(pv);
+queueMicrotask(() => {
+    composer = new Composer({ pv, realm, world: () => world, onChange: () => { dirty = true; } });
+    // (an imported heightmap has no plates, so no geology)
+    document.querySelector('#dndRail [data-rail="geo"]')?.remove();
+    sliderBoxes();
+    dockLayout(pv, composer);
+    if (!IS_TOUCH) { $('viewMode').value = 'map'; $('viewMode').dispatchEvent(new Event('change')); }
+});
+$('info').textContent = IS_TOUCH ? 'Drag to turn · Pinch to zoom' : 'Drag to turn the globe · Middle button to move it · Scroll to zoom · Double-click a name to rename it';
 
 let world = null, dirty = true, version = 0, building = null;
 const finisher = new FinishService();
@@ -68,6 +86,7 @@ function received(msg) {
     world = { version: ++version, seed: msg.seed, tMesh: meshFromArrays(sh.mesh), meshArrays: sh.mesh, heightKm: sh.heightKm, shade: sh.shade, finishJob: sh.finish, fin: null, finishing: null, problem: null, n: sh.mesh.numCells };
     building = null; dirty = true;
     pv.forget();                                         // (the old world's finished moment let go)
+    realm.clear();
     importBtn.disabled = false; importBtn.textContent = 'Import';
     reapplyBtn.classList.remove('spinning');
     overlay.hide();
@@ -89,6 +108,7 @@ async function finish(w) {
         const res = await finisher.finish({ ...w.finishJob, mesh: w.meshArrays, cells: w.n, width: finishWidth(w.n), climateOptions: climateOptions() }, { onStage, onProgress, keep: false });
         if (world !== w) return;
         w.fin = { cells: w.n, raster: res.raster, rivers: res.rivers, climate: res.climate, stats: res.stats };
+        realm.setWorld(w);
         console.info(`[import] finished in ${((performance.now() - started) / 1000).toFixed(1)} s`);
     } catch (err) {
         if (err.name === 'AbortError' || world !== w) return;
@@ -118,16 +138,18 @@ function tick(now) {
         pv.syncClouds(fin, world.seed);
         if (fin) pv.paintFinished(fin, false, world.version); else pv.paintLive({ T: { heightKm: world.heightKm, shade: world.shade }, tMesh: world.tMesh });
         pv.syncLegendCard(!!fin);
+        composer?.legend();
     }
     pv.updatePatch(now, world ? pv.shows(world.fin) : null, world?.fin, world?.seed);
     pv.render(now);
+    composer?.drawScreen();
 }
 requestAnimationFrame(tick);
 pv.onPointer((e) => {
     const p = world ? pv.placeUnder(e) : null;
     if (!p) { pv.hover(null); return; }
     const r = pv.cellUnder(world.tMesh, p);
-    pv.hover(pv.readoutLines({ p, fin: pv.shows(world.fin), heightKm: world.heightKm[r] }));
+    pv.hover(pv.readoutLines({ p, fin: pv.shows(world.fin), heightKm: world.heightKm[r], head: [...realm.hoverLines(p, e), ...(composer?.hoverLines(e) ?? [])] }));
 });
 
 // ── the heightmap: the file, its preview, Import (Earth's at first) ──
@@ -145,6 +167,7 @@ function loadImage(img, name) {
     gray = new Uint8Array(grayW * grayH);
     for (let i = 0; i < gray.length; i++) gray[i] = Math.round(0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]);
     $('importFileName').textContent = name;
+    importKey = `import:${name}:${grayW}x${grayH}`;              // (the kingdoms kept per image)
     importBtn.disabled = false;
 }
 fileInput.addEventListener('change', (e) => {
@@ -196,6 +219,8 @@ const exportPanel = initEvolutionExport({
     centerLon: () => view.centerLon, projection: () => (view.mode === 'map' ? { id: view.projection, opts: view.projOpts } : null), isTouch: IS_TOUCH,
     fine: (fin, _seed, W, onProgress) => pv.detail.window(fin, world.seed, { W, x0: 0, y0: 0, w: W, h: W >> 1 }, null, onProgress),
     page: 'import', titleNote: () => '',
+    catalogue: [{ id: 'dnd', label: 'Map', rows: [{ id: 'dndMap', label: 'The map as you see it', colour: true, tip: 'The base and the overlays chosen over the map (politics, winds or currents), in the chosen projection' }] }],
+    produceOwn: (rctx, job) => composer?.produce(rctx, job) ?? null,
     names: (ctx, opts) => { const c = Math.round(opts.centerLon || 0); return { start: ['orogen', 'import'], end: [c ? `c${Math.abs(c)}${c > 0 ? 'E' : 'W'}` : null] }; },
     about: () => ({ page: 'Import', planet: 'an imported heightmap', link: null }) });
 $('exportBtn').addEventListener('click', () => {

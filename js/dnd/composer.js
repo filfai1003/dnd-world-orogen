@@ -28,7 +28,7 @@ function tempRgb(t, out) {
     }
     return out;
 }
-const SEASON_IT = { year: "media dell'anno", jan: 'gennaio', jul: 'luglio' };
+const SEASON_IT = { year: 'yearly mean', jan: 'January', jul: 'July' };
 function tempColorAt(fin, W, season) {
     const T = finishedClimateValue('temperature', season, fin.climate, W), c = [0, 0, 0];
     return (out, o, x, y, wet, kk, k3, v, lake) => {
@@ -40,7 +40,7 @@ function tempColorAt(fin, W, season) {
 }
 function tempLegend(season) {
     const g = TEMP_STOPS.map(([t, c]) => `${css(c)} ${Math.round(100 * (t + 30) / 62)}%`).join(', ');
-    return `<div class="evo-legend-head">Temperatura, ${SEASON_IT[season] ?? season}</div>
+    return `<div class="evo-legend-head">Temperature, ${SEASON_IT[season] ?? season}</div>
         <div class="dnd-ramp" style="background:linear-gradient(90deg, ${g})"></div>
         <div class="dnd-ramp-labels"><span>−30 °C</span><span>0</span><span>15</span><span>32 °C</span></div>`;
 }
@@ -53,14 +53,14 @@ export const ownLayers = {
 
 // ── the geology, simplified: a few materials, each its likely areas (soft and approximate) and its richest deposits ──
 export const MATERIALS = [
-    { id: 'iron', name: 'Ferro', sym: 'Fe', rgb: [150, 62, 30], metals: ['iron'] },
-    { id: 'copper', name: 'Rame', sym: 'Cu', rgb: [206, 112, 40], metals: ['copper'] },
-    { id: 'tin', name: 'Stagno', sym: 'Sn', rgb: [36, 146, 160], metals: ['tin'] },
-    { id: 'silver', name: 'Argento', sym: 'Ag', rgb: [112, 124, 146], metals: ['silver'] },
-    { id: 'gold', name: 'Oro', sym: 'Au', rgb: [212, 160, 20], metals: ['gold'] },
-    { id: 'gems', name: 'Gemme', sym: '◆', rgb: [180, 34, 108], metals: ['diamonds'], group: 'gem' },
-    { id: 'salt', name: 'Sale', sym: 'Sa', rgb: [190, 100, 190], metals: ['salt'] },
-    { id: 'coal', name: 'Carbone', sym: 'C', rgb: [44, 40, 40], metals: ['coal'] },
+    { id: 'iron', name: 'Iron', sym: 'Fe', rgb: [150, 62, 30], metals: ['iron'] },
+    { id: 'copper', name: 'Copper', sym: 'Cu', rgb: [206, 112, 40], metals: ['copper'] },
+    { id: 'tin', name: 'Tin', sym: 'Sn', rgb: [36, 146, 160], metals: ['tin'] },
+    { id: 'silver', name: 'Silver', sym: 'Ag', rgb: [112, 124, 146], metals: ['silver'] },
+    { id: 'gold', name: 'Gold', sym: 'Au', rgb: [212, 160, 20], metals: ['gold'] },
+    { id: 'gems', name: 'Gems', sym: '◆', rgb: [180, 34, 108], metals: ['diamonds'], group: 'gem' },
+    { id: 'salt', name: 'Salt', sym: 'Sa', rgb: [190, 100, 190], metals: ['salt'] },
+    { id: 'coal', name: 'Coal', sym: 'C', rgb: [44, 40, 40], metals: ['coal'] },
 ];
 const ZONE_FROM = 0.33, ZONE_FULL = 0.75, RICH = 0.7;
 
@@ -145,55 +145,55 @@ export class Composer {
         dock.innerHTML = `
             <div id="dndFly" class="dnd-fly" hidden>
                 <section class="dnd-fly-part" data-part="temp" hidden>
-                    <div class="dnd-fly-head"><h3>Temperatura</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-fly-head"><h3>Temperature</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
                     <div class="dnd-choice" id="dndTempSeason">
-                        <label><input type="radio" name="dndSeason" value="year" checked>Media dell'anno</label>
-                        <label><input type="radio" name="dndSeason" value="jan">Gennaio</label>
-                        <label><input type="radio" name="dndSeason" value="jul">Luglio</label>
+                        <label><input type="radio" name="dndSeason" value="year" checked>Yearly mean</label>
+                        <label><input type="radio" name="dndSeason" value="jan">January</label>
+                        <label><input type="radio" name="dndSeason" value="jul">July</label>
                     </div>
                 </section>
                 <section class="dnd-fly-part" data-part="fert" hidden>
-                    <div class="dnd-fly-head"><h3>Fertilità</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-fly-head"><h3>Fertility</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
                     <div class="dnd-choice" id="dndFertMode">
-                        <label><input type="radio" name="dndFert" value="farmLand" checked>Terre coltivabili</label>
-                        <label><input type="radio" name="dndFert" value="aridity">Aridità</label>
-                        <label><input type="radio" name="dndFert" value="growing">Stagione di crescita</label>
+                        <label><input type="radio" name="dndFert" value="farmLand" checked>Farmland</label>
+                        <label><input type="radio" name="dndFert" value="aridity">Aridity</label>
+                        <label><input type="radio" name="dndFert" value="growing">Growing season</label>
                     </div>
                 </section>
                 <section class="dnd-fly-part" data-part="flow" hidden>
-                    <div class="dnd-fly-head"><h3>Venti e correnti</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-fly-head"><h3>Winds and currents</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
                     <div class="dnd-choice" id="dndFlow">
-                        <label><input type="radio" name="dndFlowR" value="none" checked>Niente</label>
-                        <label><input type="radio" name="dndFlowR" value="wind">Venti <span class="dnd-hint">per le rotte volanti</span></label>
-                        <label><input type="radio" name="dndFlowR" value="currents">Correnti marine</label>
+                        <label><input type="radio" name="dndFlowR" value="none" checked>None</label>
+                        <label><input type="radio" name="dndFlowR" value="wind">Winds <span class="dnd-hint">for flying routes</span></label>
+                        <label><input type="radio" name="dndFlowR" value="currents">Sea currents</label>
                     </div>
                 </section>
                 <section class="dnd-fly-part" data-part="geo" hidden>
-                    <div class="dnd-fly-head"><h3>Geologia</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-fly-head"><h3>Geology</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
                     <div id="dndGeoPop" class="dnd-choice">
                         ${MATERIALS.map(m => `<label class="dnd-mat"><input type="checkbox" value="${m.id}"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</label>`).join('')}
-                        <div class="dnd-pop-row"><button type="button" data-geo="all">Tutti</button><button type="button" data-geo="none">Nessuno</button></div>
+                        <div class="dnd-pop-row"><button type="button" data-geo="all">All</button><button type="button" data-geo="none">None</button></div>
                     </div>
                 </section>
                 <section class="dnd-fly-part" data-part="politics" hidden></section>
             </div>
-            <nav id="dndRail" class="dnd-rail" aria-label="Mappa">
-                ${btn('terrain', 'Terreno: la mappa disegnata, in stile antico')}
-                ${btn('satellite', 'Satellite: il pianeta visto dallo spazio')}
-                ${btn('temp', 'Temperatura: media dell’anno, di gennaio o di luglio')}
-                ${btn('fert', 'Fertilità: terre coltivabili, aridità, stagione di crescita')}
+            <nav id="dndRail" class="dnd-rail" aria-label="Map">
+                ${btn('terrain', 'Terrain: the drawn map, antique style')}
+                ${btn('satellite', 'Satellite: the planet seen from space')}
+                ${btn('temp', 'Temperature: yearly mean, January or July')}
+                ${btn('fert', 'Fertility: farmland, aridity, growing season')}
                 <span class="dnd-rail-sep" aria-hidden="true"></span>
-                ${btn('politics', 'Politica: regni, città e sentieri')}
-                ${btn('flow', 'Venti o correnti marine')}
-                ${btn('geo', 'Geologia: zone e giacimenti dei materiali')}
+                ${btn('politics', 'Politics: kingdoms, cities and routes')}
+                ${btn('flow', 'Winds or sea currents')}
+                ${btn('geo', 'Geology: where each material lies, and its richest deposits')}
                 <span class="dnd-rail-sep" aria-hidden="true"></span>
-                ${btn('export', 'Esporta la mappa come la vedi')}
+                ${btn('export', 'Export the map as you see it')}
             </nav>`;
         document.body.appendChild(dock);
         // (the Politica panel: the realm's controls, moved into the dock's panel)
         const pol = dock.querySelector('[data-part="politics"]');
-        pol.innerHTML = `<div class="dnd-fly-head"><h3>Politica</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
-            <label class="toggle-label dnd-show"><input type="checkbox" id="dndPolitics" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Mostra sulla mappa</label>`;
+        pol.innerHTML = `<div class="dnd-fly-head"><h3>Politics</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
+            <label class="toggle-label dnd-show"><input type="checkbox" id="dndPolitics" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Show on the map</label>`;
         const section = $('realmSection');
         if (section) pol.appendChild(section);
         $('dndRight')?.remove();
@@ -360,17 +360,17 @@ export class Composer {
     /** The hover card's lines for a deposit's mark under the pointer. */
     hoverLines(e) {
         const hit = e ? this.geoPos.find(g => Math.hypot(g.x - e.clientX, g.y - e.clientY) < 11) : null;
-        return hit ? [`<span class="hi-label">Giacimento</span> <b>${hit.m.name}</b> · ${hit.rich >= RICH ? 'ricco' : 'discreto'}`] : [];
+        return hit ? [`<span class="hi-label">Deposit</span> <b>${hit.m.name}</b> · ${hit.rich >= RICH ? 'rich' : 'modest'}`] : [];
     }
 
     /** The overlays' legend, under the base's. */
     legend() {
         const el = $('dndLegend'); if (!el) return;
         const parts = [];
-        if (this.flow === 'wind') parts.push('<div class="dnd-leg-row">➝ <b>Venti</b>: la direzione in cui soffiano, più lunghe dove sono forti</div>');
-        if (this.flow === 'currents') parts.push('<div class="dnd-leg-row">➝ <b>Correnti marine</b>: dove spingono le navi</div>');
-        if (this.geo.size) parts.push(`<div class="dnd-leg-row">${MATERIALS.filter(m => this.geo.has(m.id)).map(m => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</span>`).join('')}</div><div class="dnd-leg-note">Zone: dove il materiale è probabile · Cerchi: i giacimenti più ricchi</div>`);
-        if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Sentieri: strade (marrone), vie fluviali (blu a puntini), rotte per mare (blu a tratti), con le frecce della corrente</div>');
+        if (this.flow === 'wind') parts.push('<div class="dnd-leg-row">➝ <b>Winds</b>: where they blow, longer where they are strong</div>');
+        if (this.flow === 'currents') parts.push('<div class="dnd-leg-row">➝ <b>Sea currents</b>: where they carry ships</div>');
+        if (this.geo.size) parts.push(`<div class="dnd-leg-row">${MATERIALS.filter(m => this.geo.has(m.id)).map(m => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</span>`).join('')}</div><div class="dnd-leg-note">Zones: where the material is likely · Circles: the richest deposits</div>`);
+        if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Routes: roads (brown), river ways (dotted blue), sea routes (dashed blue), with the current’s arrows</div>');
         el.innerHTML = parts.join('');
         el.hidden = !parts.length;
         if (parts.length) $('legendCard').hidden = false;
@@ -384,7 +384,7 @@ export class Composer {
         // (the degrees as a number beside the slider)
         const num = document.createElement('input');
         num.type = 'number'; num.id = 'dndCenterNum'; num.className = 'dnd-num'; num.min = '-180'; num.max = '180'; num.step = '1'; num.value = slider.value;
-        num.setAttribute('aria-label', 'Centro della mappa, gradi');
+        num.setAttribute('aria-label', 'Map centre, degrees');
         $('vMapCenterLon')?.after(num);
         $('vMapCenterLon')?.classList.add('dnd-hidden');
         num.addEventListener('change', () => setLon(+num.value || 0));

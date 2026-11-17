@@ -13,10 +13,10 @@ export const KINGDOM_RGB = [[181, 82, 59], [59, 111, 181], [78, 154, 74], [193, 
     [90, 122, 46], [181, 138, 90], [59, 79, 138], [154, 46, 79], [106, 154, 181], [160, 160, 59], [96, 96, 96], [196, 122, 46]];
 const kcol = (k, a = 1) => { const c = KINGDOM_RGB[k % KINGDOM_RGB.length]; return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
 
-const LIFE_IT = ['Disabitato', 'Agricoltura', 'Pastorizia', 'Caccia, pesca e raccolta'];
-const STAPLE_IT = ['Niente', 'Cereali di risaia (riso)', 'Cereali da clima fresco (grano, orzo, segale)', 'Cereali da clima caldo (mais, miglio, sorgo)', 'Radici e tuberi', 'Bestiame (latte, carne, lana)', 'Pesce', 'Selvaggina e frutti selvatici'];
-const CLIMATE_IT = { A: 'Tropicale', B: 'Arido', C: 'Temperato', D: 'Continentale', E: 'Polare' };
-const rank = (p, capital) => (capital ? 'Capitale' : p >= 50000 ? 'Metropoli' : p >= 15000 ? 'Città' : p >= 4000 ? 'Borgo' : 'Villaggio');
+const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
+const STAPLE_IT = ['Nothing', 'Paddy grain (rice)', 'Cool-climate grain (wheat, barley, rye)', 'Warm-climate grain (maize, millet, sorghum)', 'Roots and tubers', 'Livestock (milk, meat, wool)', 'Fish', 'Game and wild fruit'];
+const CLIMATE_IT = { A: 'Tropical', B: 'Arid', C: 'Temperate', D: 'Continental', E: 'Polar' };
+const rank = (p, capital) => (capital ? 'Capital' : p >= 50000 ? 'Metropolis' : p >= 15000 ? 'City' : p >= 4000 ? 'Town' : 'Village');
 
 export class Realm {
     /** `pv`: the planet view; `onChange()`: repaint; `getCode()`: the planet code (the realm kept per code). */
@@ -31,7 +31,7 @@ export class Realm {
         this.openK = new Set();                        // (the kingdoms opened in the list: none at first)
         this.worker = new Worker(new URL('./realm-worker.js', import.meta.url), { type: 'module' });
         this.worker.onmessage = ({ data }) => this.received(data);
-        this.worker.onerror = (e) => this.status(`Errore nel calcolo dei regni: ${e.message}`);
+        this.worker.onerror = (e) => this.status(`Error working out the kingdoms: ${e.message}`);
         this.wire();
     }
 
@@ -97,7 +97,7 @@ export class Realm {
         document.querySelector('.realm-rename')?.remove();
         const box = document.createElement('div');
         box.className = 'realm-rename';
-        box.innerHTML = `<label>${hit.kind === 'k' ? 'Nome del regno' : 'Nome della città'}</label><input type="text" value="${esc(names[hit.i] ?? '')}" spellcheck="false">`;
+        box.innerHTML = `<label>${hit.kind === 'k' ? 'Kingdom name' : 'City name'}</label><input type="text" value="${esc(names[hit.i] ?? '')}" spellcheck="false">`;
         box.style.left = `${Math.min(innerWidth - 230, Math.max(8, e.clientX - 100))}px`;
         box.style.top = `${Math.min(innerHeight - 80, e.clientY + 14)}px`;
         document.body.appendChild(box);
@@ -121,16 +121,16 @@ export class Realm {
     key(view) { return `${this.enabled}|${this.version}|${this.drag ? `${this.drag.u.toFixed(4)},${this.drag.v.toFixed(4)}` : ''}`; }
 
     // ── a world: its grid read, the realm worked out (or the one kept for its code) ──
-    clear() { this.world = null; this.data = null; this.ready = false; this.changed(); this.status('I regni arrivano quando il pianeta è finito (clima, fiumi e cibo)…'); }
+    clear() { this.world = null; this.data = null; this.ready = false; this.changed(); this.status('The kingdoms come once the planet is finished (climate, rivers and food)…'); }
     setWorld(w) {
         if (!w?.fin) return;
         this.world = w; this.data = null; this.ready = false; this.landMask = null;
-        this.status('Leggo il terreno, il clima e il cibo…');
+        this.status('Reading the land, the climate and the food…');
         // (a moment for the status to show before the grid's work holds the page)
         setTimeout(() => {
             if (this.world !== w) return;
             let grid;
-            try { grid = realmGrid(w.fin); } catch (err) { console.error(err); this.status(`Non riesco a leggere il pianeta: ${err.message}`); return; }
+            try { grid = realmGrid(w.fin); } catch (err) { console.error(err); this.status(`Could not read the planet: ${err.message}`); return; }
             this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES } });
             const kept = this.load();
             if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.request({ cmd: 'fixed', cities: kept.cities }); }
@@ -149,19 +149,19 @@ export class Realm {
     }
     request(msg) {
         this.busy = true; msg.id = ++this.reqId;
-        this.status(msg.cmd === 'auto' ? 'Piazzo regni e città, traccio i sentieri…' : 'Ricalcolo confini e sentieri…');
+        this.status(msg.cmd === 'auto' ? 'Placing kingdoms and cities, tracing the routes…' : 'Working out the borders and routes again…');
         this.worker.postMessage(msg);
     }
     received(m) {
         if (m.type === 'ready') return;
         if (m.id !== this.reqId) return;
         this.busy = false;
-        if (m.type === 'error') { console.error(m.message); this.status(`Errore: ${m.message.split('\n')[0]}`); return; }
+        if (m.type === 'error') { console.error(m.message); this.status(`Error: ${m.message.split('\n')[0]}`); return; }
         this.data = m; this.ready = true;
         // (names: a kingdom by its index, a city by its place in the list — kept as they were where they still exist)
-        this.names.kingdoms = Array.from({ length: m.K }, (_, k) => this.names.kingdoms[k] || `Regno ${k + 1}`);
-        this.names.cities = m.cities.map((c, i) => this.names.cities[i] || (c.capital ? `Capitale ${this.romanOf(c.kingdom)}` : `Città ${i + 1}`));
-        this.status(`${m.K} regni, ${m.cities.length} città, ${m.routes.length} collegamenti · ${(m.ms / 1000).toFixed(1)} s`);
+        this.names.kingdoms = Array.from({ length: m.K }, (_, k) => this.names.kingdoms[k] || `Kingdom ${k + 1}`);
+        this.names.cities = m.cities.map((c, i) => this.names.cities[i] || (c.capital ? `Capital ${this.romanOf(c.kingdom)}` : `City ${i + 1}`));
+        this.status(`${m.K} kingdoms, ${m.cities.length} cities, ${m.routes.length} links · ${(m.ms / 1000).toFixed(1)} s`);
         this.drawCache = null;
         this.changed();
         this.save();
@@ -190,26 +190,26 @@ export class Realm {
             const lives = K.byLife.map((v, i) => [i, v]).filter(([i, v]) => i && pct(v, lifeT) >= 3).sort((a, b) => b[1] - a[1]).map(([i, v]) => `${LIFE_IT[i]} ${pct(v, lifeT)}%`).join(' · ');
             const staples = K.byStaple.map((v, i) => [i, v]).filter(([i, v]) => i && pct(v, stT) >= 5).sort((a, b) => b[1] - a[1]).map(([i, v]) => `${STAPLE_IT[i]} ${pct(v, stT)}%`).join(' · ');
             const climate = Object.entries(K.climate).filter(([, v]) => pct(v, clT) >= 5).sort((a, b) => b[1] - a[1]).map(([g, v]) => `${CLIMATE_IT[g]} ${pct(v, clT)}%`).join(' · ');
-            const ss = K.selfSufficiency, ssWord = ss >= 1.3 ? 'autosufficiente, con eccedenze' : ss >= 1 ? 'autosufficiente, al limite' : 'non autosufficiente: dipende dai vicini';
-            const ssNum = ss.toLocaleString('it-IT', { maximumFractionDigits: 1 });
+            const ss = K.selfSufficiency, ssWord = ss >= 1.3 ? 'self-sufficient, with a surplus' : ss >= 1 ? 'self-sufficient, only just' : 'not self-sufficient: relies on its neighbours';
+            const ssNum = ss.toLocaleString('en-GB', { maximumFractionDigits: 1 });
             const towns = d.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].capital - a[0].capital) || (b[0].people - a[0].people));
-            const links = (i) => d.routes.filter(r => r.a === i || r.b === i).map(r => { const o = r.a === i ? r.b : r.a; const by = r.modes.some(m => m === 2) ? 'per mare' : r.modes.some(m => m === 1) ? 'per fiume' : 'a piedi'; return `${esc(this.names.cities[o] ?? '')} ${r.days.toFixed(0)} g ${by}`; }).join(' · ');
+            const links = (i) => d.routes.filter(r => r.a === i || r.b === i).map(r => { const o = r.a === i ? r.b : r.a; const by = r.modes.some(m => m === 2) ? 'by sea' : r.modes.some(m => m === 1) ? 'by river' : 'on foot'; return `${esc(this.names.cities[o] ?? '')} ${r.days.toFixed(0)} d ${by}`; }).join(' · ');
             const open = this.openK.has(k);
             return `<div class="realm-k${open ? ' open' : ''}">
-                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Chiudi' : 'Apri'} il regno">${open ? '▾' : '▸'}</button><i class="realm-swatch" style="background:${kcol(k)}"></i><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Nome del regno"><span class="realm-meta">${K.cities} città</span></div>
+                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><i class="realm-swatch" style="background:${kcol(k)}"></i><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"><span class="realm-meta">${K.cities} ${K.cities === 1 ? 'city' : 'cities'}</span></div>
                 ${open ? `<div class="realm-facts">
-                    <div><b>Popolazione stimata</b> ${fmt(K.people)} · <b>Superficie</b> ${fmt(K.area)} km² · <b>Città</b> ${K.cities} (porti ${K.ports})</div>
-                    <div><b>Cibo</b> ${ssWord}: la sua terra potrebbe sfamare ~${fmt(K.food)} persone, ${ssNum} volte la popolazione</div>
-                    <div><b>Come si nutre</b> ${lives || '—'}</div>
-                    <div><b>Alimenti principali</b> ${staples || '—'}</div>
-                    <div><b>Clima</b> ${climate || '—'}</div>
-                    <div><b>Territorio</b> montagne ${pct(K.mountains, K.area)}% · coste ~${fmt(K.coastKm)} km · fiumi navigabili ~${fmt(K.navigable)} km${K.wild > 0 ? ` · terre selvagge ${pct(K.wild, K.area)}%` : ''}</div>
+                    <div><b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Cities</b> ${K.cities} (ports ${K.ports})</div>
+                    <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
+                    <div><b>How it eats</b> ${lives || '—'}</div>
+                    <div><b>Staple foods</b> ${staples || '—'}</div>
+                    <div><b>Climate</b> ${climate || '—'}</div>
+                    <div><b>Land</b> mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km${K.wild > 0 ? ` · wilds ${pct(K.wild, K.area)}%` : ''}</div>
                 </div>
                 <ul class="realm-cities">${towns.map(([c, i]) => `<li>
-                    <button type="button" data-act="capital" data-i="${i}" class="realm-cap${c.capital ? ' on' : ''}" title="${c.capital ? 'Capitale (clic: non più capitale)' : 'Rendi capitale: nasce un nuovo regno'}">★</button>
-                    <input class="realm-name" data-cname="${i}" value="${esc(this.names.cities[i] ?? '')}" aria-label="Nome della città">
-                    <span class="realm-meta">${rank(c.people, c.capital)} · ${fmt(c.people)} ab.${c.port ? ' · porto' : ''}${c.river ? ' · fiume' : ''}</span>
-                    <button type="button" data-act="remove" data-i="${i}" class="realm-del" title="Togli la città">×</button>
+                    <button type="button" data-act="capital" data-i="${i}" class="realm-cap${c.capital ? ' on' : ''}" title="${c.capital ? 'Capital (click: no longer a capital)' : 'Make it a capital: a new kingdom is born'}">★</button>
+                    <input class="realm-name" data-cname="${i}" value="${esc(this.names.cities[i] ?? '')}" aria-label="City name">
+                    <span class="realm-meta">${rank(c.people, c.capital)} · ${fmt(c.people)} people${c.port ? ' · port' : ''}${c.river ? ' · river' : ''}</span>
+                    <button type="button" data-act="remove" data-i="${i}" class="realm-del" title="Remove the city">×</button>
                     <div class="realm-links">${links(i)}</div></li>`).join('')}</ul>` : ''}
             </div>`;
         }).join('');
@@ -219,7 +219,7 @@ export class Realm {
     setEditing(on) {
         this.editing = on;
         $('realmEdit').classList.toggle('active', on);
-        $('realmEdit').textContent = on ? 'Fine modifica' : 'Modifica città';
+        $('realmEdit').textContent = on ? 'Done editing' : 'Edit cities';
         $('realmEditHint').hidden = !on;
         if (on && !this.enabled) this.onEnable?.(true);
     }
@@ -249,7 +249,7 @@ export class Realm {
         if (i < 0) {
             // (a click on empty land: a new city there)
             this.data.cities.push({ u: at.u, v: at.v, capital: false, kingdom: -1, people: 0 });
-            this.names.cities.push(`Città ${this.data.cities.length}`);
+            this.names.cities.push(`City ${this.data.cities.length}`);
             this.fixed();
             return;
         }
@@ -280,9 +280,9 @@ export class Realm {
         const i = this.cityNear(p[0], p[1], e);
         if (i >= 0) {
             const c = this.data.cities[i];
-            out.push(`<span class="hi-label">${rank(c.people, c.capital)}</span> <b>${esc(this.names.cities[i])}</b> · ${fmt(c.people)} abitanti${c.port ? ' · porto' : ''}${c.river ? ' · sul fiume' : ''}`);
+            out.push(`<span class="hi-label">${rank(c.people, c.capital)}</span> <b>${esc(this.names.cities[i])}</b> · ${fmt(c.people)} people${c.port ? ' · port' : ''}${c.river ? ' · on a river' : ''}`);
         }
-        if (out.length) out.push('<span class="hi-label">Doppio clic per cambiare il nome</span>');
+        if (out.length) out.push('<span class="hi-label">Double-click to rename</span>');
         return out;
     }
 
@@ -544,10 +544,10 @@ export class Realm {
 
     // ── the export's maps ──
     static ROWS = [
-        { id: 'dndPolitical', label: 'Mappa politica (per il DM)', colour: true, tip: 'La mappa a colori con regni, confini, città, sentieri e nomi' },
-        { id: 'dndPlayers', label: 'Mappa per i giocatori', colour: true, tip: 'La mappa a colori con città, sentieri e nomi, senza regni né confini' },
-        { id: 'dndBlank', label: 'Mappa per i giocatori, senza nomi', colour: true, tip: 'Città e sentieri senza nomi: da completare al tavolo, o per gli enigmi' },
-        { id: 'dndOverlay', label: 'Regni, città e sentieri (trasparente)', colour: true, tip: 'Solo i regni, i confini, le città e i sentieri su fondo trasparente, da sovrapporre a un’altra mappa' },
+        { id: 'dndPolitical', label: 'Political map (for the DM)', colour: true, tip: 'The colour map with kingdoms, borders, cities, routes and names' },
+        { id: 'dndPlayers', label: 'Players’ map', colour: true, tip: 'The colour map with cities, routes and names, without kingdoms or borders' },
+        { id: 'dndBlank', label: 'Players’ map, unnamed', colour: true, tip: 'Cities and routes without names: to fill in at the table, or for puzzles' },
+        { id: 'dndOverlay', label: 'Kingdoms, cities and routes (transparent)', colour: true, tip: 'Only the kingdoms, borders, cities and routes on a transparent background, to lay over another map' },
     ];
     /** An export row of the realm's (or null: not one of them). */
     produce(rctx, job) {

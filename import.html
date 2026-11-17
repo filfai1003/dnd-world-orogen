@@ -41,20 +41,10 @@
 </head>
 <body>
     <nav id="topNav">
-        <a class="nav-logo" href="generate.html" aria-label="World Orogen: the Studio"><svg class="og-mark" width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><defs><clipPath id="navMarkClip"><circle cx="16" cy="16" r="12.8"/></clipPath></defs><g clip-path="url(#navMarkClip)"><rect class="s1" x="0" y="9.6" width="32" height="3.2"/><rect class="s2" x="0" y="14.4" width="32" height="3.2"/><rect class="s3" x="0" y="19.2" width="32" height="3.2"/></g><circle class="ring" cx="16" cy="16" r="13.6" stroke-width="1.8"/></svg><span class="nav-logo__word">World Orogen</span></a>
-        <a href="generate.html" class="nav-tab">Studio</a>
+        <a class="nav-logo" href="generate.html" aria-label="D&amp;D World, based on World Orogen"><svg class="og-mark" width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><defs><clipPath id="navMarkClip"><circle cx="16" cy="16" r="12.8"/></clipPath></defs><g clip-path="url(#navMarkClip)"><rect class="s1" x="0" y="9.6" width="32" height="3.2"/><rect class="s2" x="0" y="14.4" width="32" height="3.2"/><rect class="s3" x="0" y="19.2" width="32" height="3.2"/></g><circle class="ring" cx="16" cy="16" r="13.6" stroke-width="1.8"/></svg><span class="nav-logo__word">World Orogen</span></a>
         <a href="generate.html" class="nav-tab">Generate</a>
         <a href="import.html" class="nav-tab active" aria-current="page">Import</a>
-        <a href="evolution.html" class="nav-tab">Evolution</a>
-        <div class="nav-follow">
-            <a class="nav-icon" href="https://github.com/raguilar011095/planet_heightmap_generation" target="_blank" rel="noopener" title="Source code on GitHub" aria-label="Source code on GitHub"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#github"/></svg></a>
-            <span class="nav-follow-label">Follow</span>
-            <a class="nav-icon" href="https://bsky.app/profile/did:plc:quknpdz3qcoid5uh4qv27w2t" target="_blank" rel="noopener" title="Follow on Bluesky for new releases and sneak peeks" aria-label="World Orogen on Bluesky"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#bluesky"/></svg></a>
-            <a class="nav-icon" href="https://x.com/worldorogen" target="_blank" rel="noopener" title="Follow on X for new releases and sneak peeks" aria-label="World Orogen on X"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#x"/></svg></a>
-            <a class="nav-icon" href="https://www.threads.com/@orogen.studio" target="_blank" rel="noopener" title="Follow on Threads for new releases and sneak peeks" aria-label="World Orogen on Threads"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#threads"/></svg></a>
-            <span class="nav-follow-label">Support</span>
-            <a class="nav-icon" href="https://ko-fi.com/orogenstudio" target="_blank" rel="noopener" title="Support World Orogen on Ko-fi" aria-label="Support World Orogen on Ko-fi"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#kofi"/></svg></a>
-        </div>
+        <span class="dnd-title">D&amp;D World</span>
         <button class="nav-theme" id="themeToggle" type="button" aria-label="Switch the theme" title="Switch the theme"><span class="nav-theme__opt nav-theme__light"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg></span><span class="nav-theme__opt nav-theme__dark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></span></button>
     </nav>
     <div id="buildOverlay" class="build-overlay hidden">
@@ -73,7 +63,7 @@
         <div id="sidebarHeader">
             <div>
                 <h2>Import</h2>
-                <div class="sub">Your own landmass, its climate</div>
+                <div class="sub">Your own map, for your D&amp;D campaign</div>
             </div>
             <button id="sidebarToggle" title="Collapse panel" aria-label="Collapse panel" aria-expanded="true">&#x00AB;</button>
         </div>
@@ -104,7 +94,22 @@
                 <div class="import-hint" style="margin-top:8px">Your image stays on your device — nothing is uploaded. Imported worlds can't be shared via planet codes.</div>
             </div>
         </details>
-        <details class="section is-land">
+        <details class="section is-plates" open>
+            <summary>Kingdoms and cities</summary>
+            <div class="section-body">
+                <div class="cg">
+                    <label>Kingdoms <span class="v" id="vRealmK">6</span></label>
+                    <input type="range" id="sRealmK" min="1" max="16" value="6" step="1">
+                </div>
+                <div class="cg">
+                    <label>Cities <span class="tip" data-tip="In all, capitals included: at least one per kingdom">?</span> <span class="v" id="vRealmN">30</span></label>
+                    <input type="range" id="sRealmN" min="1" max="200" value="30" step="1">
+                </div>
+            </div>
+        </details>
+        <button id="realmBuild" class="realm-btn realm-build">Generate kingdoms</button>
+        <div id="realmStatus" class="climate-hint" hidden></div>
+        <details class="section is-land dnd-hidden">
             <summary>Terrain sculpting <span class="tip" data-tip="Post-processing passes to refine the imported terrain. All default to 0 (no effect). Adjust sliders and click Reapply.">?</span></summary>
             <div class="section-body">
                 <div class="cg">
@@ -140,7 +145,7 @@
                 <button id="reapplyBtn" title="Reapply terrain sculpting" disabled><span class="reapply-icon">&#x21bb;</span> Reapply</button>
             </div>
         </details>
-        <details class="section is-climate">
+        <details class="section is-climate dnd-hidden">
             <summary>Climate <span class="tip" data-tip="The planet's temperature and water cycle, worked through the climate itself — changes apply on slider release, recomputing the climate (a few seconds)">?</span></summary>
             <div class="section-body">
                 <div class="climate-hint">Changes apply on release — the climate is recomputed.</div>
@@ -156,18 +161,11 @@
                 </div>
             </div>
         </details>
-        <details id="statsDetails" class="stats-toggle">
+        <details id="statsDetails" class="stats-toggle dnd-hidden">
             <summary>Stats</summary>
             <div id="stats"></div>
         </details>
-        <button id="exportBtn" class="export-btn">Export map</button>
-        <div id="repoLink">
-            <a class="rl-github" href="https://github.com/raguilar011095/planet_heightmap_generation" target="_blank" rel="noopener" title="Source code on GitHub"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#github"/></svg>GitHub</a>
-            <a class="rl-icon" href="https://bsky.app/profile/did:plc:quknpdz3qcoid5uh4qv27w2t" target="_blank" rel="noopener" title="Follow on Bluesky for new releases and sneak peeks" aria-label="World Orogen on Bluesky"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#bluesky"/></svg></a>
-            <a class="rl-icon" href="https://x.com/worldorogen" target="_blank" rel="noopener" title="Follow on X for new releases and sneak peeks" aria-label="World Orogen on X"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#x"/></svg></a>
-            <a class="rl-icon" href="https://www.threads.com/@orogen.studio" target="_blank" rel="noopener" title="Follow on Threads for new releases and sneak peeks" aria-label="World Orogen on Threads"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#threads"/></svg></a>
-            <a class="rl-kofi" href="https://ko-fi.com/orogenstudio" target="_blank" rel="noopener" title="Support World Orogen on Ko-fi" aria-label="Support World Orogen on Ko-fi"><svg width="16" height="16" aria-hidden="true"><use href="assets/social.svg#kofi"/></svg>Support</a>
-        </div>
+        <button id="exportBtn" class="export-btn dnd-hidden">Export map</button>
         </div>
     </div>
     <!-- the layer bar: v2/js/view/layer-bar.js mountLayerBar (the view strip, the tabs, their rows, the chip) -->
@@ -186,6 +184,30 @@
     <input type="hidden" id="sLc" value="0.3">
     <div id="hoverInfo"></div>
     <div id="info">Import an equirectangular B&amp;W heightmap to get started</div>
+        <aside id="dndRight" class="dnd-right" aria-label="Politics">
+        <div class="dnd-right-head">
+            <div>
+                <h2>Politics</h2>
+                <div class="sub">Kingdoms, cities and routes</div>
+            </div>
+            <button id="dndRightToggle" type="button" title="Close or open the panel" aria-label="Close or open the panel" aria-expanded="true">&#x00BB;</button>
+        </div>
+        <div id="realmSection" class="dnd-right-body">
+            <div class="section-body">
+                <div class="realm-row dnd-hidden">
+                    <button id="realmEdit" class="realm-btn" type="button">Edit cities</button>
+                    <button id="realmReset" class="realm-btn" type="button" title="Forget the hand edits and place everything again">Start over</button>
+                </div>
+                <div id="realmEditHint" class="climate-hint" hidden>Drag a city to move it · click empty land to add one · ★ in the list to make it a capital · Esc to finish</div>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmFills"><span class="toggle-track"><span class="toggle-thumb"></span></span>Kingdom colours</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmBorders"><span class="toggle-track"><span class="toggle-thumb"></span></span>Borders</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmRoutes"><span class="toggle-track"><span class="toggle-thumb"></span></span>Roads and routes</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmNames"><span class="toggle-track"><span class="toggle-thumb"></span></span>Names</label>
+                <div class="climate-hint">To rename, type over a name in the list, or double-click it on the map</div>
+                <div id="realmList" class="realm-list"></div>
+            </div>
+        </div>
+    </aside>
 
     <script type="importmap">
     {

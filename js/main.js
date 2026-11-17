@@ -51,7 +51,7 @@ const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location
     onChange: viewChanged, alive: (fin) => fin === world?.fin,
     extraLines: (ctx, W, view) => { drawPlateLines(ctx, W, view, world, { pending, hovered: hoveredPiece }); composer?.draw(ctx, W, view); realm?.draw(ctx, W, view); },
     extraLinesKey: (view) => `${world?.version ?? 0}|${view.layer === 'plates'}|${[...pending].join(',')}|${hoveredPiece}|${realm?.key(view) ?? ''}|${composer?.key() ?? ''}`,
-    infoText: (mode) => (IS_TOUCH ? 'Trascina per girare · due dita per lo zoom' : `Trascina per girare ${mode === 'map' ? 'la mappa' : 'il globo'} · tasto centrale per spostarla · rotella per lo zoom · doppio clic su un nome per cambiarlo`) });
+    infoText: (mode) => (IS_TOUCH ? 'Drag to turn · Pinch to zoom' : `Drag to turn the ${mode === 'map' ? 'map' : 'globe'} · Middle button to move it · Scroll to zoom · Double-click a name to rename it`) });
 const view = pv.view;
 // (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });
@@ -63,7 +63,7 @@ queueMicrotask(() => {
     dockLayout(pv, composer);
     if (!IS_TOUCH) { $('viewMode').value = 'map'; $('viewMode').dispatchEvent(new Event('change')); }
 });
-if (IS_TOUCH) $('info').textContent = 'Trascina per girare · due dita per lo zoom';
+if (IS_TOUCH) $('info').textContent = 'Drag to turn · Pinch to zoom';
 // (a touch screen wider than a phone — a tablet — keeps the edit button too: styles.css body.touch)
 if (IS_TOUCH) document.body.classList.add('touch');
 console.info(`[generate] painting ${pv.gpu ? `on the GPU at ${pv.GPU_WIDTH} px` : 'on the CPU'}`);
@@ -107,7 +107,7 @@ let building = null;         // what the worker is doing: 'generate', 'reapply',
 function generate(seed, toggledIndices = []) {
     building = 'generate'; finisher.cancel();
     showBuildOverlay();
-    $('generate').disabled = true; $('generate').textContent = 'Genero…'; $('generate').classList.add('generating');
+    $('generate').disabled = true; $('generate').textContent = 'Generating…'; $('generate').classList.add('generating');
     worker.postMessage({ cmd: 'generate', ...sliders(), seed, toggledIndices, next: true, shared: true });
 }
 function failed(message) {
@@ -116,7 +116,7 @@ function failed(message) {
     resetBuildButton();
     showBuildError(describeFailure(message), message);
 }
-function resetBuildButton() { const b = $('generate'); b.disabled = false; b.classList.remove('generating', 'stale', 'regen'); b.textContent = 'Genera mondo'; }
+function resetBuildButton() { const b = $('generate'); b.disabled = false; b.classList.remove('generating', 'stale', 'regen'); b.textContent = 'Generate world'; }
 
 /** A world from the worker: its first picture shown, its finish started. */
 function received(msg) {
@@ -288,7 +288,7 @@ rebuildFab.addEventListener('click', () => {
     for (const id of pending) { if (world.plateIsOcean.has(id)) world.plateIsOcean.delete(id); else world.plateIsOcean.add(id); }
     clearPending(); setHovered(-1);
     building = 'edit'; finisher.cancel();
-    $('generate').disabled = true; $('generate').textContent = 'Genero…'; $('generate').classList.add('generating');
+    $('generate').disabled = true; $('generate').textContent = 'Generating…'; $('generate').classList.add('generating');
     pv.hover(['Rebuilding…']);
     worker.postMessage({ cmd: 'editRecompute', plateIsOcean: [...world.plateIsOcean], ...sliders() });
 });
@@ -306,7 +306,7 @@ function checkStale() {
     btn.classList.remove('stale', 'regen');
     if (plateChanged) { btn.classList.add('regen'); btn.textContent = 'Regenerate'; }
     else if (detailChanged) { btn.classList.add('stale'); btn.textContent = 'Rebuild'; }
-    else btn.textContent = 'Genera mondo';
+    else btn.textContent = 'Generate world';
 }
 const reapplyBtn = $('reapplyBtn');
 for (const s of ['sN', 'sP', 'sCn', 'sJ', 'sNs', 'sCsv', 'sLc', ...SCULPT, 'sTmp', 'sPrc']) {
@@ -399,7 +399,7 @@ const code = () => currentCode || (world ? String(world.seed) : '');
 // (and Generate's own row, the Plates: their colours, or each one's number — at the export's width and centre)
 const PLATES_ROW = { id: 'plates', label: 'Plates', colour: true, data: [{ key: 'plateId', suffix: 'id', label: 'Plate number', scale: DATA_SCALES.plateId, bits: 8 }], tip: 'The plates in their colours, the boundaries by kind (the Plates view without its arrows); as data, each plate’s number' };
 // (D&D fork: one map, the one composed on screen — its base and its overlays)
-const CATALOGUE_WITH_PLATES = [{ id: 'dnd', label: 'Mappa', rows: [{ id: 'dndMap', label: 'La mappa come la vedi', colour: true, tip: 'La base e le sovrapposizioni scelte sopra la mappa (politica, venti o correnti, geologia), nella proiezione scelta' }] }];
+const CATALOGUE_WITH_PLATES = [{ id: 'dnd', label: 'Map', rows: [{ id: 'dndMap', label: 'The map as you see it', colour: true, tip: 'The base and the overlays chosen over the map (politics, winds or currents, geology), in the chosen projection' }] }];
 function producePlates(rctx, job) {
     const own = composer.produce(rctx, job);
     if (own) return own;

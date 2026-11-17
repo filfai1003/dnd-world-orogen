@@ -4,7 +4,6 @@
 
 import { realmGrid, GW, GH, KOPPEN_CODES } from './realm-data.js';
 import { colorMap, rollShift } from '../../v2/js/evolution/export.js';
-import { P as PROJ } from '../../v2/js/view/projections.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -27,11 +26,8 @@ export class Realm {
         this.names = { kingdoms: [], cities: [] };
         this.show = { fills: true, borders: true, routes: true, names: true };
         this.editing = false; this.drag = null;
-        // (the cities and the names on screen, the same size at any zoom — drawn over the map, not on the planet's picture)
-        this.screen = document.createElement('canvas');
-        Object.assign(this.screen.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', pointerEvents: 'none' });
-        (document.getElementById('mapCanvas') ?? document.getElementById('canvas')).after(this.screen);
-        this.screenKey = ''; this.screenPos = [];
+        // (on or off over any base map: the composer's Politica switch — composer.js draws it on screen)
+        this.enabled = true; this.screenPos = [];
         this.worker = new Worker(new URL('./realm-worker.js', import.meta.url), { type: 'module' });
         this.worker.onmessage = ({ data }) => this.received(data);
         this.worker.onerror = (e) => this.status(`Errore nel calcolo dei regni: ${e.message}`);
@@ -79,7 +75,7 @@ export class Realm {
     changed(recount = true) { this.version++; this.onChange(); if (recount) this.renderList(); }
 
     /** The key the overlay is drawn again for. */
-    key(view) { return `${view.layer === 'realm'}|${this.version}|${this.drag ? `${this.drag.u.toFixed(4)},${this.drag.v.toFixed(4)}` : ''}`; }
+    key(view) { return `${this.enabled}|${this.version}|${this.drag ? `${this.drag.u.toFixed(4)},${this.drag.v.toFixed(4)}` : ''}`; }
 
     // ── a world: its grid read, the realm worked out (or the one kept for its code) ──
     clear() { this.world = null; this.data = null; this.ready = false; this.changed(); this.status('I regni arrivano quando il pianeta è finito (clima, fiumi e cibo)…'); }
@@ -181,7 +177,7 @@ export class Realm {
         $('realmEdit').classList.toggle('active', on);
         $('realmEdit').textContent = on ? 'Fine modifica' : 'Modifica città';
         $('realmEditHint').hidden = !on;
-        if (on && this.pv.view.layer !== 'realm') this.pv.setLayer('realm');
+        if (on && !this.enabled) this.onEnable?.(true);
     }
     onPlanet(e) { return e.target === this.pv.ui.canvas || e.target === this.pv.ui.map; }
     uvOf(e) { const p = this.pv.placeUnder(e); return p ? { u: p[0], v: p[1] } : null; }
@@ -202,7 +198,7 @@ export class Realm {
         return best;
     }
     pointerDown(e) {
-        if (!this.editing || !this.data || this.busy || !this.onPlanet(e) || e.button !== 0) return;
+        if (!this.editing || !this.enabled || !this.data || this.busy || !this.onPlanet(e) || e.button !== 0) return;
         const at = this.uvOf(e); if (!at) return;
         const i = this.cityNear(at.u, at.v, e);
         e.stopImmediatePropagation(); e.preventDefault();
@@ -234,7 +230,7 @@ export class Realm {
 
     // ── the hover card's lines on the Politica view ──
     hoverLines(p, e = null) {
-        if (!this.data || !p) return [];
+        if (!this.enabled || !this.data || !p) return [];
         const out = [], x = Math.min(GW - 1, Math.floor(p[0] * GW)), y = Math.min(GH - 1, Math.max(0, Math.floor(p[1] * GH))), k = this.data.owner[y * GW + x];
         if (k >= 0) out.push(`<span style="color:${kcol(k)}">■</span> <b>${esc(this.names.kingdoms[k])}</b>`);
         const i = this.cityNear(p[0], p[1], e);
@@ -265,7 +261,7 @@ export class Realm {
         ctx.restore();
     }
     draw(ctx, W, view) {
-        if (view.layer !== 'realm' || !this.data) return;
+        if (!this.enabled || !this.data) return;
         this.paint(ctx, W, { fills: this.show.fills, borders: false, routes: false, cities: false });
     }
     paintFills(ctx, W, H) {
@@ -349,6 +345,17 @@ export class Realm {
             ctx.beginPath(); strokeWrapped(ctx, run.pts, W, H); ctx.stroke();
         }
         ctx.setLineDash([]);
+        // (the current's arrows along the sea routes, every few cells)
+        ctx.strokeStyle = 'rgba(0,118,128,0.95)'; ctx.fillStyle = 'rgba(0,118,128,0.95)'; ctx.lineWidth = 1.4 * s;
+        for (const run of this.runs) {
+            if (run.mode !== 2 || !run.cur) continue;
+            run.raw.forEach((p, k) => {
+                const c = run.cur[k]; if (!c || k % 6 !== 3) return;
+                const sp = Math.hypot(c[0], c[1]); if (!(sp > 0.02)) return;
+                const ex = c[0] / sp, ey = -c[1] / sp;
+                arrow(ctx, p[0] * W + ey * 5 * s, p[1] * H - ex * 5 * s, ex, ey, (5 + Math.min(9, 20 * sp)) * s);
+            });
+        }
     }
     paintCities(ctx, W, H, s, names) {
         const d = this.data, dr = this.drag;
@@ -380,54 +387,15 @@ export class Realm {
         }
     }
 
-    // ── on screen: each city's mark and name, and each kingdom's name, at a constant size ──
-    /** Where a place [u, v] lands on screen (client px), or null: behind the globe, or off the map's outline. */
-    projector() {
-        const fv = this.pv.globe.frameView?.();
-        if (!fv) return null;
-        if (fv.kind === 'globe') {
-            const cam = fv.cam;
-            return { key: `g|${cam.map(v => v.toFixed(4)).join(',')}|${fv.r.toFixed(1)}`, clip: null, at: (u, v) => {
-                const lon = u * 2 * Math.PI - Math.PI, lat = (0.5 - v) * Math.PI, p = fv.local(lon, lat);
-                if (p[0] * cam[0] + p[1] * cam[1] + p[2] * cam[2] <= 1.02) return null;
-                return fv.toScreen(p);
-            } };
-        }
-        const P = PROJ[fv.id], frame = this.pv.globe.mapBox?.();
-        return { key: `m|${fv.key}`, clip: frame, at: (u, v) => {
-            let lon = u * 2 * Math.PI - Math.PI - fv.centre;
-            lon = ((lon + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-            const xy = P.fwd(lon, (0.5 - v) * Math.PI, fv.opts);
-            return xy ? fv.toClient(xy[0], xy[1]) : null;
-        } };
-    }
-    drawScreen() {
-        const cv = this.screen, on = this.pv.view.layer === 'realm' && !!this.data;
-        const pr = on ? this.projector() : null;
-        const dpr = Math.min(2, devicePixelRatio || 1), Wc = Math.round(innerWidth * dpr), Hc = Math.round(innerHeight * dpr);
-        const sh = this.show, key = on && pr ? `${pr.key}|${this.version}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${Wc}x${Hc}` : 'off';
-        if (key === this.screenKey) return;
-        this.screenKey = key;
-        if (cv.width !== Wc || cv.height !== Hc) { cv.width = Wc; cv.height = Hc; }
-        const ctx = cv.getContext('2d');
-        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, Wc, Hc);
+    // ── on screen: each city's mark and name, and each kingdom's name, at a constant size (composer.js's layer) ──
+    /** The screen key's part for the realm (drawn again when it changes). */
+    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}`; }
+    /** Draw on the composer's screen layer: `pr.at(u, v)` → client px or null, `line(pts)` a broken polyline, `placed` the
+     *  labels' boxes already taken. */
+    drawOnScreen(ctx, pr, line, placed) {
         this.screenPos = [];
-        if (!on || !pr) return;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.save();
-        const clip = pr.clip;
-        if (clip) { ctx.beginPath(); ctx.rect(clip.left, clip.top, clip.width, clip.height); ctx.clip(); }
-        // (a line on screen: broken where it goes behind the globe or jumps across the map's edge)
-        const jump = clip ? clip.width / 4 : innerWidth / 4;
-        const line = (pts) => {
-            let prev = null;
-            for (const p of pts) {
-                const q = pr.at(((p[0] % 1) + 1) % 1, p[1]);
-                if (!q) { prev = null; continue; }
-                if (prev && Math.abs(q[0] - prev[0]) + Math.abs(q[1] - prev[1]) < jump) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]);
-                prev = q;
-            }
-        };
+        if (!this.enabled || !this.data) return;
+        const sh = this.show;
         const d = this.data, dr = this.drag;
         ctx.lineJoin = 'round'; ctx.lineCap = 'round';
         // (the borders: a pale halo and a dark dashed line)
@@ -452,9 +420,26 @@ export class Realm {
                 ctx.beginPath(); line(r.pts); ctx.stroke();
             }
             ctx.setLineDash([]);
+            // (on the sea routes, the current's arrows: where it sets the ship, and how hard — one every ~50 px)
+            ctx.strokeStyle = 'rgba(0,118,128,0.95)'; ctx.fillStyle = 'rgba(0,118,128,0.95)'; ctx.lineWidth = 1.6;
+            for (const r of runs) {
+                if (r.mode !== 2 || !r.cur) continue;
+                let last = null;
+                r.raw.forEach((p, k) => {
+                    const c = r.cur[k]; if (!c) return;
+                    const sp = Math.hypot(c[0], c[1]); if (!(sp > 0.02)) return;
+                    const q = pr.at(((p[0] % 1) + 1) % 1, p[1]); if (!q) return;
+                    if (last && Math.hypot(q[0] - last[0], q[1] - last[1]) < 50) return;
+                    const lat = (0.5 - p[1]) * Math.PI, step = 0.6 / 360, du = c[0] / sp * step / Math.max(0.2, Math.cos(lat)), dv = -c[1] / sp * step;
+                    const q2 = pr.at((((p[0] + du) % 1) + 1) % 1, p[1] + dv); if (!q2) return;
+                    let ex = q2[0] - q[0], ey = q2[1] - q[1]; const l = Math.hypot(ex, ey); if (!(l > 0) || l > 60) return;
+                    ex /= l; ey /= l; last = q;
+                    arrow(ctx, q[0] + ey * 6, q[1] - ex * 6, ex, ey, 6 + Math.min(10, 22 * sp));
+                });
+            }
         }
         // (the names: the kingdoms' first, over their capitals, then the towns' by importance, none over another)
-        const placed = [], fits = (b) => { for (const o of placed) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; placed.push(b); return true; };
+        const fits = (b) => { for (const o of placed) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; placed.push(b); return true; };
         const later = [];
         const label = (text, x, y, font, fill, align = 'left') => {
             ctx.font = font;
@@ -488,7 +473,6 @@ export class Realm {
             ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(250,242,222,0.9)'; ctx.strokeText(text, x, y);
             ctx.fillStyle = fill; ctx.fillText(text, x, y);
         }
-        ctx.restore();
     }
     /** The routes as runs by land, by river, by water — each smoothed (cached per realm). */
     routeRuns() {
@@ -501,7 +485,7 @@ export class Realm {
             for (let i = 1; i <= r.modes.length; i++) {
                 if (i === r.modes.length || r.modes[i] !== r.modes[start]) {
                     const pts = r.path.slice(start, i + 1);
-                    if (pts.length >= 2) this.runs.push({ mode: r.modes[start], kind: kind(r), pts: smooth(unwrap(pts), 2) });
+                    if (pts.length >= 2) this.runs.push({ mode: r.modes[start], kind: kind(r), pts: smooth(unwrap(pts), 2), raw: pts, cur: r.cur ? r.cur.slice(start, i + 1) : null });
                     start = i;
                 }
             }
@@ -578,6 +562,12 @@ function strokeWrapped(ctx, pts, W, H) {
         if (off === null) continue;
         pts.forEach((p, i) => { const x = (p[0] + off) * W, y = p[1] * H; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
     }
+}
+/** A small arrow from (x, y) along the unit (ex, ey), `len` long. */
+function arrow(ctx, x, y, ex, ey, len) {
+    const x1 = x + ex * len, y1 = y + ey * len, h = Math.min(5, len * 0.45), a = Math.atan2(ey, ex);
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - h * Math.cos(a - 0.5), y1 - h * Math.sin(a - 0.5)); ctx.lineTo(x1 - h * Math.cos(a + 0.5), y1 - h * Math.sin(a + 0.5)); ctx.closePath(); ctx.fill();
 }
 function star(ctx, x, y, r) {
     ctx.beginPath();

@@ -53,7 +53,8 @@ export class PlanetView {
      *   moment still kept (its Satellite view drawn ahead only while it is); extraLines(ctx, width) and extraLinesKey(): the
      *   page's own lines over the picture
      */
-    constructor({ isTouch, gpu = true, paletteKey, onChange = () => {}, alive = () => true, extraLines = null, extraLinesKey = () => null, infoText = null, band = {}, frameHidden = () => false }) {
+    constructor({ isTouch, gpu = true, paletteKey, onChange = () => {}, alive = () => true, extraLines = null, extraLinesKey = () => null, infoText = null, band = {}, frameHidden = () => false, ownLayers = null }) {
+        this.ownLayers = ownLayers;      // (D&D fork: a page's own finished layers — { has(layer), colorAt(layer, fin, W, lut, view), legend(layer, view) })
         this.isTouch = isTouch;
         this.MAP_WIDTH = isTouch ? 1024 : 2048;
         this.SHARP_WIDTH = isTouch ? 0 : 4096;         // (the sharper texture, when paused (desktop; developer: "Sharper when paused"))
@@ -309,7 +310,7 @@ export class PlanetView {
      *  with its picture; Geology with its rocks; Food) — or null. */
     shows(fin) {
         const v = this.view;
-        if (!fin || !v.finished || !((v.layer === 'terrain' || v.layer === 'realm') || v.layer === 'heightmap' || CLIMATE_LAYERS.has(v.layer) || GEOLOGY_LAYERS.has(v.layer) || FARMING_LAYERS.has(v.layer))) return null;
+        if (!fin || !v.finished || !((v.layer === 'terrain' || v.layer === 'realm') || this.ownLayers?.has(v.layer) || v.layer === 'heightmap' || CLIMATE_LAYERS.has(v.layer) || GEOLOGY_LAYERS.has(v.layer) || FARMING_LAYERS.has(v.layer))) return null;
         return (!CLIMATE_LAYERS.has(v.layer) || fin.climate) && (!FINISHED_ONLY_LAYERS.has(v.layer) || fin.climate?.raster?.sat) && (!GEOLOGY_LAYERS.has(v.layer) || fin.raster.geology) ? fin : null;
     }
 
@@ -321,12 +322,12 @@ export class PlanetView {
     paintFinished(fin, sharp, id = '') {
         const view = this.view, t = sharp ? (this.tex.sharp ??= texture(this.SHARP_WIDTH)) : this.tex.lo;
         const lut = heightLutOf(view.layer === 'heightmap' ? 'heightmap' : view.palette), water = view.water && ((view.layer === 'terrain' || view.layer === 'realm') || view.layer === 'satellite');
-        const C = CLIMATE_LAYERS.has(view.layer) ? fin.climate : null, geo = GEOLOGY_LAYERS.has(view.layer), farm = FARMING_LAYERS.has(view.layer);
+        const C = CLIMATE_LAYERS.has(view.layer) ? fin.climate : null, geo = GEOLOGY_LAYERS.has(view.layer), farm = FARMING_LAYERS.has(view.layer), own = !!this.ownLayers?.has(view.layer);
         this.glint((view.layer === 'terrain' || view.layer === 'realm') || view.layer === 'satellite');
         // (the satellite view shows the lakes always — they are its ground — the rivers with Rivers & Lakes; the geology and
         // farming views their lakes too, as water)
-        paintFinished(fin.raster, t, lut, { seaImage: this.glinting ? this.seaMask.image.data : null, seaWidth: this.MAP_WIDTH, exaggeration: this.SHADING.exaggeration * (view.layer === 'satellite' ? 1.25 : 1), lakes: water || view.layer === 'satellite' || geo || farm,
-            shaded: view.shaded, keep: true, colorAt: geo ? finishedGeologyColor(view.layer, t.width, fin, view.deposit, view.age, view.ageRes) : farm ? finishedFarmingColor(view.layer, fin, t.width) : C ? finishedClimateColor(view.layer, view.season, C, t.width, lut, fin) : null });
+        paintFinished(fin.raster, t, lut, { seaImage: this.glinting ? this.seaMask.image.data : null, seaWidth: this.MAP_WIDTH, exaggeration: this.SHADING.exaggeration * (view.layer === 'satellite' ? 1.25 : 1), lakes: water || view.layer === 'satellite' || geo || farm || own,
+            shaded: view.shaded, keep: true, colorAt: own ? this.ownLayers.colorAt(view.layer, fin, t.width, lut, view) : geo ? finishedGeologyColor(view.layer, t.width, fin, view.deposit, view.age, view.ageRes) : farm ? finishedFarmingColor(view.layer, fin, t.width) : C ? finishedClimateColor(view.layer, view.season, C, t.width, lut, fin) : null });
         if (this.glinting) { this.seaMask.ctx.putImageData(this.seaMask.image, 0, 0); this.globe.seaMaskChanged(); }
         t.ctx.putImageData(t.image, 0, 0);
         // (the rivers' lines on the Terrain view — and on Farmland, the water its canals and floods come from; from space they
@@ -335,10 +336,11 @@ export class PlanetView {
         this.drawLines(t, C);
         this.show(t);
         // (and made again for another finished moment — the same moment finished again, with another climate, has the same key)
-        const legend = $('climateLegend'), legendKey = C || geo || farm ? this.finishedLegendKey(fin, farm, id) : '';
+        const legend = $('climateLegend'), legendKey = C || geo || farm || own ? this.finishedLegendKey(fin, farm, id) : '';
         if (legend.dataset.key !== legendKey || this.legendFin !== fin) {
             this.legendFin = fin;
-            if (geo) legend.innerHTML = geologyLegendHTML(view.layer, fin, view.deposit, view.age, view.ageRes);
+            if (own) legend.innerHTML = this.ownLayers.legend(view.layer, view);
+            else if (geo) legend.innerHTML = geologyLegendHTML(view.layer, fin, view.deposit, view.age, view.ageRes);
             else if (farm) legend.innerHTML = farmingLegendHTML(view.layer, fin);
             else if (C) drawLegend(legend, view.layer, view.season, C, null);
             else legend.innerHTML = '';

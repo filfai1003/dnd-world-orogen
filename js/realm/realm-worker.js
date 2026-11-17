@@ -449,7 +449,9 @@ function finishRealm(cities, owner, K, extra = {}) {
         cities: cities.map((t, i) => ({ c: t.c, u: ((t.c % g.GW) + 0.5) / g.GW, v: (((t.c / g.GW) | 0) + 0.5) / g.GH, capital: !!t.capital, kingdom: t.kingdom, port: !!t.port, people: Math.round(cityPop[i]),
             river: g.riverQ[t.c] >= CROSS_Q, heightM: Math.round(g.heightM[t.c]), koppen: g.codes[g.koppen[t.c]] })),
         kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0 })),
-        routes: R.map(r => ({ a: r.a, b: r.b, days: r.days, path: r.cells.map(c => [((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]), modes: r.modes })),
+        // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
+        routes: R.map(r => ({ a: r.a, b: r.b, days: r.days, path: r.cells.map(c => [((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]), modes: r.modes,
+            cur: r.cells.map(c => (g.land[c] || g.lake[c] ? null : [+g.curU[c].toFixed(3), +g.curV[c].toFixed(3)])) })),
         ...extra,
     };
 }

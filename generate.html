@@ -252,31 +252,6 @@
             <button id="loadBtn" title="Load planet from code">Load</button>
         </div>
         <div id="seedError">Invalid planet code</div>
-        <details class="section is-climate" id="realmSection" open>
-            <summary>Regni e città <span class="tip" data-tip="Regni, città e sentieri piazzati sul pianeta finito: le città dove cibo, acqua dolce e porti si incontrano, i regni cresciuti dalle capitali e bilanciati per sfamarsi da soli, i sentieri via terra, fiume e mare (con venti e correnti). Si vedono nella vista Politica">?</span></summary>
-            <div class="section-body">
-                <div class="cg">
-                    <label>Regni <span class="v" id="vRealmK">6</span></label>
-                    <input type="range" id="sRealmK" min="1" max="16" value="6" step="1">
-                </div>
-                <div class="cg">
-                    <label>Città in tutto <span class="tip" data-tip="Comprese le capitali: almeno una per regno">?</span> <span class="v" id="vRealmN">30</span></label>
-                    <input type="range" id="sRealmN" min="1" max="200" value="30" step="1">
-                </div>
-                <button id="realmBuild" class="realm-btn">Piazza regni e città</button>
-                <div class="realm-row">
-                    <button id="realmEdit" class="realm-btn" type="button">Modifica città</button>
-                    <button id="realmReset" class="realm-btn" type="button" title="Dimentica le modifiche a mano e piazza tutto di nuovo">Ricomincia</button>
-                </div>
-                <div id="realmEditHint" class="climate-hint" hidden>Trascina una città per spostarla · clic sul terreno vuoto per aggiungerne una · ★ nella lista per renderla capitale · Esc per finire</div>
-                <label class="toggle-label"><input type="checkbox" id="chkRealmFills"><span class="toggle-track"><span class="toggle-thumb"></span></span>Colori dei regni</label>
-                <label class="toggle-label"><input type="checkbox" id="chkRealmBorders"><span class="toggle-track"><span class="toggle-thumb"></span></span>Confini</label>
-                <label class="toggle-label"><input type="checkbox" id="chkRealmRoutes"><span class="toggle-track"><span class="toggle-thumb"></span></span>Sentieri e rotte</label>
-                <label class="toggle-label"><input type="checkbox" id="chkRealmNames"><span class="toggle-track"><span class="toggle-thumb"></span></span>Nomi</label>
-                <div id="realmStatus" class="climate-hint" hidden></div>
-                <div id="realmList" class="realm-list"></div>
-            </div>
-        </details>
         <details class="section is-land">
             <summary>Terrain sculpting <span class="tip" data-tip="Erosion and smoothing passes that refine the raw terrain. Adjust sliders and click Reapply — no full rebuild needed.">?</span></summary>
             <div class="section-body">
@@ -329,24 +304,7 @@
                 </div>
             </div>
         </details>
-        <details class="section is-rock" id="inspectSection">
-            <summary>Inspect (advanced) <span class="tip" data-tip="The terrain's inner workings, stage by stage &mdash; what each geology and plate-physics pass built &mdash; to see why a planet looks as it does. The maps you'll want most are the tabs over the planet">?</span></summary>
-            <div class="section-body">
-                <div class="cg">
-                    <label>Layer</label>
-                    <select id="debugLayer">
-                        <option value="">None &mdash; the tab shown</option>
-                        <optgroup label="The world's past">
-                            <option value="presentFloorAge">Sea-floor age</option>
-                            <option value="presentBeltKind">Mountain belts by kind</option>
-                            <option value="presentBeltAge">Mountain belts by age</option>
-                            <option value="presentCraton">Cratons</option>
-                        </optgroup>
-                    </select>
-                </div>
-            </div>
-        </details>
-        <details id="statsDetails" class="stats-toggle">
+        <details id="statsDetails" class="stats-toggle dnd-hidden">
             <summary>Stats</summary>
             <div id="stats"></div>
         </details>
@@ -508,6 +466,39 @@
     </button>
     <div id="info">Drag to rotate &middot; Scroll to zoom &middot; Ctrl-click (&#8984;-click on a Mac) to reshape continents</div>
 
+        <aside id="dndRight" class="dnd-right" aria-label="Politica">
+        <div class="dnd-right-head">
+            <div>
+                <h2>Politica</h2>
+                <div class="sub">Regni, città e sentieri</div>
+            </div>
+            <button id="dndRightToggle" type="button" title="Chiudi o apri il pannello" aria-label="Chiudi o apri il pannello" aria-expanded="true">&#x00BB;</button>
+        </div>
+        <div id="realmSection" class="dnd-right-body">
+            <div class="section-body">
+                <div class="cg">
+                    <label>Regni <span class="v" id="vRealmK">6</span></label>
+                    <input type="range" id="sRealmK" min="1" max="16" value="6" step="1">
+                </div>
+                <div class="cg">
+                    <label>Città in tutto <span class="tip" data-tip="Comprese le capitali: almeno una per regno">?</span> <span class="v" id="vRealmN">30</span></label>
+                    <input type="range" id="sRealmN" min="1" max="200" value="30" step="1">
+                </div>
+                <button id="realmBuild" class="realm-btn">Piazza regni e città</button>
+                <div class="realm-row">
+                    <button id="realmEdit" class="realm-btn" type="button">Modifica città</button>
+                    <button id="realmReset" class="realm-btn" type="button" title="Dimentica le modifiche a mano e piazza tutto di nuovo">Ricomincia</button>
+                </div>
+                <div id="realmEditHint" class="climate-hint" hidden>Trascina una città per spostarla · clic sul terreno vuoto per aggiungerne una · ★ nella lista per renderla capitale · Esc per finire</div>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmFills"><span class="toggle-track"><span class="toggle-thumb"></span></span>Colori dei regni</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmBorders"><span class="toggle-track"><span class="toggle-thumb"></span></span>Confini</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmRoutes"><span class="toggle-track"><span class="toggle-thumb"></span></span>Sentieri e rotte</label>
+                <label class="toggle-label"><input type="checkbox" id="chkRealmNames"><span class="toggle-track"><span class="toggle-thumb"></span></span>Nomi</label>
+                <div id="realmStatus" class="climate-hint" hidden></div>
+                <div id="realmList" class="realm-list"></div>
+            </div>
+        </div>
+    </aside>
     <script type="importmap">
     {
         "imports": {

@@ -578,7 +578,8 @@ void main() {
         // area's shift)
         const r = this.map.frame.getBoundingClientRect(), b = this.map.bounds, aspect = (b[1] - b[0]) / (b[3] - b[2]);
         const pad = this.mapPad ?? { top: 0, bottom: 0, side: 0 };
-        const f = { left: r.left + (this.openShift || 0), top: r.top + pad.top, width: r.width, height: Math.max(1, r.height - pad.top - pad.bottom) };
+        const right = (typeof window !== 'undefined' && window.__openRight) || 0;     // (D&D fork: a panel on the right, kept clear)
+        const f = { left: r.left + (this.openShift || 0), top: r.top + pad.top, width: Math.max(1, r.width - right), height: Math.max(1, r.height - pad.top - pad.bottom) };
         const s = Math.max(1, Math.min((f.width - left - 2 * pad.side) / aspect, f.height));
         return { left: f.left + (f.width - aspect * s) / 2, top: f.top + (f.height - s) / 2, width: aspect * s, height: s };
     }

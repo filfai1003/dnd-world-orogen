@@ -1612,3 +1612,77 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-cap.on { color: var(--gold-ink); }
 .realm-del:hover { color: var(--accent); }
 @media (max-width: 768px) { .realm-cap, .realm-del { min-width: 44px; min-height: 44px; } .realm-btn { min-height: 44px; } }
+
+/* D&D fork — the map composer's bar (js/dnd/composer.js), the boxes beside the sliders and the Politica panel (js/dnd/panels.js) */
+.dnd-hidden { display: none !important; }
+.dnd-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); justify-content: center;
+    background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(12px);
+    border: var(--line-hair) solid var(--rule); border-radius: var(--radius-lg); padding: 0 var(--space-2) 0 0;
+    box-shadow: var(--shadow-card);
+}
+.layer-bar .dnd-bar .map-tabs { box-shadow: none; border: none; background: none; }
+.layer-row .dnd-bar .map-tab::before { content: ''; --l: var(--layer-land); }
+.layer-row .dnd-bar .map-tab[data-base="satellite"]::before { --l: var(--layer-climate); }
+.layer-row .dnd-bar .map-tab[data-base="temp"]::before { --l: var(--layer-rock); }
+.layer-row .dnd-bar .map-tab[data-base="fert"]::before { --l: var(--layer-food); }
+.dnd-sep { width: var(--line-hair); align-self: stretch; margin: 8px var(--space-1); background: var(--rule); }
+.dnd-bar .toggle-label { font-size: 13px; color: var(--ui-label); }
+.dnd-pick {
+    width: auto; flex: none; margin: 0;
+    background: var(--surface); color: var(--ink); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm);
+    font: 500 13px/1 var(--font-ui); padding: 6px 8px; cursor: pointer; min-height: 30px;
+}
+.dnd-geo { position: relative; }
+.dnd-pop {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 190px;
+    background: var(--bg); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+    padding: var(--space-2) var(--space-3); display: flex; flex-direction: column; gap: 4px;
+}
+.dnd-mat { display: flex; align-items: center; gap: 8px; font: 400 13px/1.3 var(--font-ui); color: var(--ink); cursor: pointer; padding: 2px 0; }
+.dnd-dot {
+    display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%;
+    color: var(--surface); font: 600 9px/1 var(--font-text); font-style: normal; flex: none;
+}
+.dnd-pop-row { display: flex; gap: 6px; margin-top: 4px; }
+.dnd-pop-row button { flex: 1; background: none; border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); color: var(--muted); font: 500 12px/1 var(--font-ui); padding: 6px; cursor: pointer; }
+.dnd-num {
+    width: 92px; margin-left: auto; padding: 2px 6px; text-align: right;
+    background: var(--surface); color: var(--ink); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm);
+    font: 500 13px/1.4 var(--font-ui);
+}
+#sidebarContent .cg label { display: flex; align-items: center; gap: 6px; }
+.view-strip .dnd-num { width: 60px; margin-left: 6px; }
+.dnd-ramp { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
+.dnd-ramp-labels { display: flex; justify-content: space-between; font: 400 11px/1.2 var(--font-ui); color: var(--muted); }
+.dnd-legend { margin-top: 6px; font: 400 12px/1.4 var(--font-ui); color: var(--body); }
+.dnd-leg-row { display: block; }
+.dnd-leg-row:has(.dnd-leg-mat) { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 4px; }
+.dnd-leg-mat { display: inline-flex; align-items: center; gap: 4px; }
+.dnd-leg-note { color: var(--muted); font-size: 11px; margin-top: 4px; }
+#dndRight .realm-btn, #dndRight .toggle-label { font-family: var(--font-ui); }
+.dnd-right {
+    position: absolute; top: calc(var(--nav-h) + 72px); right: 16px; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(12px);
+    padding: var(--space-5); border-radius: var(--radius-xl);
+    border: var(--line-hair) solid var(--rule); box-shadow: var(--shadow-card);
+    width: 320px; max-height: calc(100vh - var(--nav-h) - 32px); display: flex; flex-direction: column;
+}
+.dnd-right-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.dnd-right-head h2 { margin-bottom: 4px; font: 600 26px/1.05 var(--font-display); }
+.dnd-right-head .sub { font: italic 400 15px/1.35 var(--font-text); color: var(--muted); }
+#dndRightToggle {
+    background: var(--surface); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm);
+    color: var(--muted); width: 30px; height: 30px; font-size: 16px; line-height: 1; cursor: pointer; padding: 0; flex: none;
+}
+.dnd-right-body { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding-right: 4px; }
+.dnd-right.collapsed { width: auto; padding: 12px; }
+.dnd-right.collapsed .dnd-right-head > div, .dnd-right.collapsed .dnd-right-body { display: none; }
+.dnd-right.collapsed .dnd-right-head { margin-bottom: 0; }
+.in-sheet-bar.dnd-bar { margin: 0 0 var(--space-3); box-shadow: none; }
+.dnd-right.in-sheet { position: static; width: auto; max-height: none; padding: var(--space-3) 0 0; border: none; box-shadow: none; background: none; backdrop-filter: none; }
+.dnd-right.in-sheet #dndRightToggle { display: none; }
+@media (max-width: 768px) {
+    .dnd-pick, .dnd-num, .dnd-pop-row button { min-height: 44px; }
+    .dnd-bar { gap: 4px; padding: 4px; }
+}

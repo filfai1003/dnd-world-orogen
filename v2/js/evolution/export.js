@@ -95,7 +95,7 @@ function pictureAt(fin, W, opts = {}) {
     return { h, sea: f.sea, wat: f.wat };
 }
 /** The picture painted at width W (paintFinished's palette, hillshade, lakes and colours) — the detail's where drawn. */
-function paintAt(fin, W, image, lut, opts) {
+export function paintAt(fin, W, image, lut, opts) {
     if (fin.fine?.W === W) paintWindow(fin.fine, { W, x0: 0, y0: 0, w: W, h: W >> 1 }, image.data, lut, opts);
     else paintFinished(fin.raster, { width: W, image }, lut, opts);
 }

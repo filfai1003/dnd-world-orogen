@@ -469,7 +469,7 @@ function grow(K, prefs = []) {
 }
 
 // ── the cities: the capitals, then the best sites in each kingdom by its food, kept apart ──
-function placeCities(caps, owner, N, mins = []) {
+function placeCities(caps, owner, N, mins = [], prefs = []) {
     const g = G, K = caps.length, F = new Float64Array(K), A = new Float64Array(K);
     for (let c = 0; c < g.n; c++) { const k = owner[c]; if (k >= 0) { F[k] += g.food[c]; if (g.food[c] > 0) A[k] += g.area[c]; } }
     const extra = Math.max(0, N - K), total = F.reduce((s, v) => s + v, 0) || 1;
@@ -480,18 +480,41 @@ function placeCities(caps, owner, N, mins = []) {
     // (a kingdom with towns already named gets at least that many, taken from the kingdom with the most)
     for (let k = 0; k < K; k++) while (counts[k] < (mins[k] || 0)) { let r = -1; for (let j = 0; j < K; j++) if (j !== k && counts[j] > (mins[j] || 0) && (r < 0 || counts[j] > counts[r])) r = j; if (r < 0) break; counts[r]--; counts[k]++; }
     const cities = caps.map((c, k) => ({ c, capital: true, kingdom: k }));
+    // (D&D fork: the towns on the kingdom's best ground, spread over the whole of it — each its site (food round it, fresh
+    // water, a harbour), more where its people like to live, less on the border; picked one by one, each as good a site as
+    // lies far enough from the towns already there, as the capitals were)
+    const { GW, GH } = g, edge = new Uint16Array(g.n).fill(65535), q = new Int32Array(g.n);
+    let qh = 0, qt = 0;
+    for (let c = 0; c < g.n; c++) {
+        const k = owner[c]; if (k < 0) continue;
+        const y = (c / GW) | 0, x = c - y * GW;
+        for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (g.land[d] && owner[d] !== k) { edge[c] = 0; q[qt++] = c; break; } }
+    }
+    while (qh < qt) {
+        const c = q[qh++], y = (c / GW) | 0, x = c - y * GW;
+        for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (owner[d] >= 0 && edge[d] === 65535) { edge[d] = edge[c] + 1; q[qt++] = d; } }
+    }
     const byKingdom = Array.from({ length: K }, () => []);
     for (let c = 0; c < g.n; c++) { const k = owner[c]; if (k >= 0 && g.site[c] > 0) byKingdom[k].push(c); }
     for (let k = 0; k < K; k++) {
         if (!counts[k]) continue;
-        const list = byKingdom[k].sort((a, b) => g.site[b] - g.site[a]), dmin = Math.max(60, 0.55 * Math.sqrt(A[k] / (counts[k] + 1)));
-        let got = 0;
-        for (const c of list) {
-            if (got >= counts[k]) break;
-            let ok = true;
-            for (const t of cities) if (angKm(c, t.c) < (t.kingdom === k ? dmin : 0.6 * dmin)) { ok = false; break; }
-            if (!ok) continue;
-            cities.push({ c, capital: false, kingdom: k }); got++;
+        const list = byKingdom[k], S = scoreOf(prefs[k]), top = S ? list.reduce((m, c) => Math.max(m, S[c]), 1e-6) : 1;
+        const base = new Float32Array(list.length);
+        list.forEach((c, i) => { base[i] = g.site[c] ** 0.6 * (S ? 0.6 + 0.8 * S[c] / top : 1) * (edge[c] <= 1 ? 0.35 : edge[c] <= 3 ? 0.7 : 1); });
+        const D = Math.max(80, 0.6 * Math.sqrt(A[k] / (counts[k] + 1))), dmin = new Float32Array(list.length).fill(Infinity);
+        const near = (c, t) => { const d = angKm(c, t.c); return t.kingdom === k ? d : d / 0.6; };
+        list.forEach((c, i) => { for (const t of cities) { const d = near(c, t); if (d < dmin[i]) dmin[i] = d; } });
+        for (let got = 0; got < counts[k]; got++) {
+            let pick = -1, pv = 0;
+            for (let i = 0; i < list.length; i++) {
+                if (dmin[i] < 45) continue;
+                const v = base[i] * (1 - Math.exp(-((dmin[i] / D) ** 2)));
+                if (v > pv) { pv = v; pick = i; }
+            }
+            if (pick < 0) break;
+            const t = { c: list[pick], capital: false, kingdom: k };
+            cities.push(t);
+            list.forEach((c, i) => { const d = near(c, t); if (d < dmin[i]) dmin[i] = d; });
         }
     }
     return cities;
@@ -620,7 +643,7 @@ function finishRealm(cities, owner, K, extra = {}) {
 
 function autoRealm(K, N, prefs = [], mins = []) {
     const { caps, owner } = grow(Math.max(1, K), prefs);
-    const cities = placeCities(caps, owner, Math.max(caps.length, N), mins);
+    const cities = placeCities(caps, owner, Math.max(caps.length, N), mins, prefs);
     return finishRealm(cities, owner, caps.length);
 }
 

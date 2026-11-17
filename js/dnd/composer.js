@@ -10,6 +10,7 @@ import { DEPOSITS, METALS } from '../../v2/js/geology/deposits.js';
 import { P as PROJ } from '../../v2/js/view/projections.js';
 
 const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const css = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -118,6 +119,7 @@ export class Composer {
         ($('mapCanvas') ?? $('canvas')).after(this.screen);
         this.screenKey = ''; this.geoPos = [];
         realm.onEnable = (on) => this.setPolitics(on);
+        realm.onLegend = () => this.legend();
         this.mountBar();
         this.wireRotate();
         this.applyBase();
@@ -379,6 +381,8 @@ export class Composer {
         if (this.flow === 'wind') parts.push('<div class="dnd-leg-row">➝ <b>Winds</b>: where they blow, longer where they are strong</div>');
         if (this.flow === 'currents') parts.push('<div class="dnd-leg-row">➝ <b>Sea currents</b>: where they carry ships</div>');
         if (this.geo.size) parts.push(`<div class="dnd-leg-row">${MATERIALS.filter(m => this.geo.has(m.id)).map(m => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</span>`).join('')}</div><div class="dnd-leg-note">Zones: where the material is likely · Circles: the richest deposits</div>`);
+        // (the kingdoms, when their names do not all fit on the map)
+        if (this.realm.enabled && this.realm.data && this.realm.kingdomsInLegend) parts.push(`<div class="dnd-leg-row dnd-leg-kingdoms">${this.realm.names.kingdoms.map((n, k) => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${this.realm.colorOf(k)}"></i>${esc(n)}</span>`).join('')}</div>`);
         if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Routes: roads (brown), river ways (dotted blue), sea routes (dashed blue), with the current’s arrows</div>');
         el.innerHTML = parts.join('');
         el.hidden = !parts.length;

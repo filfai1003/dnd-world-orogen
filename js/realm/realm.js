@@ -58,7 +58,7 @@ export class Realm {
         if (!this.preset) {
             let c = null; try { c = JSON.parse(localStorage.getItem('dnd-campaign') || 'null'); } catch { /* */ }
             if (c?.kingdoms?.length) {
-                this.names = { kingdoms: c.kingdoms, colors: c.colors || [], prefs: c.prefs || [], towns: c.towns || [], cities: [] };
+                this.names = { kingdoms: c.kingdoms, colors: c.colors || [], prefs: c.prefs || [], ncap: c.ncap || [], towns: c.towns || [], cities: [] };
                 $('sRealmK').value = String(c.kingdoms.length); $('sRealmK').dispatchEvent(new Event('input'));
                 if (c.N) { $('sRealmN').value = String(c.N); $('sRealmN').dispatchEvent(new Event('input')); }
             }
@@ -67,7 +67,7 @@ export class Realm {
     /** The campaign's peoples — names, colours, wishes, towns' names, how many cities — kept for every world to come. */
     saveCampaign() {
         const n = this.names;
-        try { localStorage.setItem('dnd-campaign', JSON.stringify({ kingdoms: n.kingdoms, colors: n.colors, prefs: n.prefs, towns: n.towns || [], N: +$('sRealmN').value })); } catch { /* */ }
+        try { localStorage.setItem('dnd-campaign', JSON.stringify({ kingdoms: n.kingdoms, colors: n.colors, prefs: n.prefs, ncap: n.ncap, towns: n.towns || [], N: +$('sRealmN').value })); } catch { /* */ }
     }
     /** The map's centre turned to the land (a new world's continents in the middle of the map). */
     centreOnLand() {
@@ -85,7 +85,7 @@ export class Realm {
         $('sRealmK').value = String(K); $('sRealmK').dispatchEvent(new Event('input'));
         if (p.cities) { $('sRealmN').value = String(Math.max(K, p.cities)); $('sRealmN').dispatchEvent(new Event('input')); }
         const ks = p.kingdoms.slice(0, K);
-        this.names = { kingdoms: ks.map(k => k.name || ''), colors: ks.map(k => k.color || ''), prefs: ks.map(k => ({ ...(k.climate ? { climate: k.climate } : {}), ...(k.prefs || {}) })), towns: ks.map(k => k.cities || []), cities: [] };
+        this.names = { kingdoms: ks.map(k => k.name || ''), colors: ks.map(k => k.color || ''), prefs: ks.map(k => ({ ...(k.climate ? { climate: k.climate } : {}), ...(k.prefs || {}) })), ncap: ks.map(k => k.capitals || 1), towns: ks.map(k => k.cities || []), cities: [] };
         this.preset = null;
         const q = new URLSearchParams(location.search); q.delete('realm');
         history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}${location.hash}`);
@@ -115,6 +115,7 @@ export class Realm {
             if (t.dataset.cname !== undefined) { this.names.cities[+t.dataset.cname] = t.value; this.changed(false); this.save(); }
             if (t.dataset.kcol !== undefined) { this.setColor(+t.dataset.kcol, t.value); this.save(); this.renderList(); }
             // (a climate chosen: the kingdoms placed again, each in its own)
+            if (t.dataset.kcap !== undefined) { this.names.ncap[+t.dataset.kcap] = +t.value; this.seatsFromCounts(); this.markSeats(); this.changed(); this.save(); }
             if (t.dataset.kpref !== undefined) { const p = this.names.prefs[+t.dataset.kpref]; if (t.value) p[t.dataset.key] = t.value; else delete p[t.dataset.key]; this.save(); this.auto(); }
         });
         list.addEventListener('input', (e) => { if (e.target.dataset.kcol !== undefined) this.setColor(+e.target.dataset.kcol, e.target.value); });
@@ -124,7 +125,8 @@ export class Realm {
             const b = e.target.closest('button[data-act]');
             if (!b || !this.data) return;
             const i = +b.dataset.i, cities = this.data.cities;
-            if (b.dataset.act === 'capital') { cities[i].capital = !cities[i].capital; if (!cities.some(c => c.capital)) cities[i].capital = true; this.fixed(); }
+            // (★: one more capital for its kingdom, or one less — the kingdom's first capital stays)
+            if (b.dataset.act === 'capital' && !cities[i].capital) { const s = this.names.seats ||= []; s[i] = !s[i]; this.names.ncap[cities[i].kingdom] = 1 + cities.filter((c, j) => c.kingdom === cities[i].kingdom && !c.capital && s[j]).length; this.markSeats(); this.changed(); this.save(); }
             if (b.dataset.act === 'remove' && cities.length > 1) { this.removeCity(i); this.fixed(); }
         });
         // (moving cities by hand: the pointer caught before the globe sees it)
@@ -183,6 +185,7 @@ export class Realm {
         n.prefs = Array.from({ length: K }, (_, k) => n.prefs?.[k] || (n.climates?.[k] ? { climate: n.climates[k] === 'highlands' ? '' : n.climates[k], ...(n.climates[k] === 'highlands' ? { height: 'high' } : {}) } : {}));
         delete n.climates;
         n.kingdoms = Array.from({ length: K }, (_, k) => n.kingdoms?.[k] || `Kingdom ${k + 1}`);
+        n.ncap = Array.from({ length: K }, (_, k) => n.ncap?.[k] || 1);
         CHOSEN = n.colors; this.fillFor = null;
     }
     status(text) { const el = $('realmStatus'); if (el) { el.textContent = text || ''; el.hidden = !text; } }
@@ -243,6 +246,8 @@ export class Realm {
                 (this.names.towns[k] || []).forEach((t, j) => { if (own[j] && t) this.names.cities[own[j][1]] = t; });
             }
         }
+        if (this.named === false || !Array.isArray(this.names.seats)) this.seatsFromCounts(m);
+        this.markSeats();
         this.named = true;
         if (this.recentre) { this.recentre = false; this.centreOnLand(); }
         this.names.cities = m.cities.map((c, i) => this.names.cities[i] || (c.capital ? `Capital ${this.romanOf(c.kingdom)}` : `City ${i + 1}`));
@@ -251,6 +256,19 @@ export class Realm {
         this.changed();
         this.save();
     }
+    /** Each kingdom's other capitals: its biggest towns after the capital, as many as it has capitals. */
+    seatsFromCounts(m = this.data) {
+        const seats = [];
+        for (let k = 0; k < m.K; k++) {
+            const own = m.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].capital - a[0].capital) || (b[0].people - a[0].people));
+            for (let j = 1; j < (this.names.ncap?.[k] || 1) && j < own.length; j++) seats[own[j][1]] = true;
+        }
+        this.names.seats = seats;
+    }
+    /** A kingdom's colour, as CSS. */
+    colorOf(k) { return kcol(k); }
+    /** A city crowned: the kingdom's capital, or one of its other capitals. */
+    markSeats() { this.data?.cities.forEach((c, i) => { c.seat = !c.capital && !!this.names.seats?.[i]; c.crown = c.capital || c.seat; }); }
     romanOf(k) { const r = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI']; return r[k] ?? String(k + 1); }
     removeCity(i) { this.data.cities.splice(i, 1); this.names.cities.splice(i, 1); }
 
@@ -284,7 +302,7 @@ export class Realm {
             return `<div class="realm-k${open ? ' open' : ''}">
                 <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"></div>
                 <div class="realm-wish-sum">${esc(wishText(this.names.prefs[k])) || 'Anywhere'}</div>
-                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change">${WISHES.map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${(this.names.prefs[k]?.[key] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div>
+                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>${WISHES.map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${(this.names.prefs[k]?.[key] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div>
                 <div class="realm-facts">
                     <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
@@ -294,9 +312,9 @@ export class Realm {
                     <div><b>Land</b> mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km${K.wild > 0 ? ` · barren ${pct(K.wild, K.area)}%` : ''}</div>
                 </div>
                 <ul class="realm-cities">${towns.map(([c, i]) => `<li>
-                    <button type="button" data-act="capital" data-i="${i}" class="realm-cap${c.capital ? ' on' : ''}" title="${c.capital ? 'Capital (click: no longer a capital)' : 'Make it a capital: a new kingdom is born'}">★</button>
+                    <button type="button" data-act="capital" data-i="${i}" class="realm-cap${c.crown ? ' on' : ''}" title="${c.capital ? 'The kingdom’s first capital' : c.seat ? 'A capital (click: no longer one)' : 'Make it one of the kingdom’s capitals'}">★</button>
                     <input class="realm-name" data-cname="${i}" value="${esc(this.names.cities[i] ?? '')}" aria-label="City name">
-                    <span class="realm-meta">${rank(c.people, c.capital)} · ${fmt(c.people)} people${c.port ? ' · port' : ''}${c.river ? ' · river' : ''}</span>
+                    <span class="realm-meta">${rank(c.people, c.crown)} · ${fmt(c.people)} people${c.port ? ' · port' : ''}${c.river ? ' · river' : ''}</span>
                     <button type="button" data-act="remove" data-i="${i}" class="realm-del" title="Remove the city">×</button>
                     <div class="realm-links">${links(i)}</div></li>`).join('')}</ul>` : ''}
             </div>`;
@@ -368,7 +386,7 @@ export class Realm {
         const i = this.cityNear(p[0], p[1], e);
         if (i >= 0) {
             const c = this.data.cities[i];
-            out.push(`<span class="hi-label">${rank(c.people, c.capital)}</span> <b>${esc(this.names.cities[i])}</b> · ${fmt(c.people)} people${c.port ? ' · port' : ''}${c.river ? ' · on a river' : ''}`);
+            out.push(`<span class="hi-label">${rank(c.people, c.crown)}</span> <b>${esc(this.names.cities[i])}</b> · ${fmt(c.people)} people${c.port ? ' · port' : ''}${c.river ? ' · on a river' : ''}`);
         }
         if (out.length) out.push('<span class="hi-label">Double-click to rename</span>');
         return out;
@@ -459,7 +477,7 @@ export class Realm {
     }
     paintRoutes(ctx, W, H, s) {
         const d = this.data;
-        const kind = (r) => { const A = d.cities[r.a], B = d.cities[r.b]; return A?.capital && B?.capital ? 'major' : (A?.capital || B?.capital) && A?.kingdom === B?.kingdom ? 'road' : 'trail'; };
+        const kind = (r) => { const A = d.cities[r.a], B = d.cities[r.b]; return A?.crown && B?.crown ? 'major' : (A?.crown || B?.crown) && A?.kingdom === B?.kingdom ? 'road' : 'trail'; };
         const STY = {
             land: { major: [2.6 * s, 'rgba(110,55,25,0.95)', []], road: [1.8 * s, 'rgba(120,65,30,0.9)', []], trail: [1.2 * s, 'rgba(120,70,35,0.85)', [3 * s, 2 * s]] },
             river: [1.6 * s, 'rgba(20,60,120,0.9)', [1 * s, 2.2 * s]],
@@ -496,7 +514,7 @@ export class Realm {
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         for (const i of order) {
             const c = d.cities[i], u = dr && dr.i === i ? dr.u : c.u, v = dr && dr.i === i ? dr.v : c.v;
-            const x = u * W, y = v * H, big = c.capital, r = (big ? 5.5 : 2.4 + Math.min(2.6, Math.log10(Math.max(1000, c.people)) - 3)) * s;
+            const x = u * W, y = v * H, big = c.crown, r = (big ? 5.5 : 2.4 + Math.min(2.6, Math.log10(Math.max(1000, c.people)) - 3)) * s;
             ctx.lineWidth = 1.2 * s; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.fillStyle = big ? kcol(c.kingdom) : 'rgba(250,240,215,0.95)';
             if (big) { star(ctx, x, y, r); ctx.fill(); ctx.stroke(); }
             else { ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); }
@@ -576,33 +594,52 @@ export class Realm {
         const fits = (b) => { for (const o of placed) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; placed.push(b); return true; };
         const later = [];
         this.labelBoxes = [];
-        const label = (text, x, y, font, fill, align = 'left', tag = null) => {
+        const boxOf = (text, x, y, font, align) => {
             ctx.font = font;
             const w = ctx.measureText(text).width, h = parseFloat(font.match(/(\d+(?:\.\d+)?)px/)[1]);
-            const x0 = align === 'center' ? x - w / 2 : x, b = [x0 - 2, y - h / 2 - 1, x0 + w + 2, y + h / 2 + 1];
-            if (!fits(b)) return;
-            if (tag) this.labelBoxes.push({ ...tag, box: b });
-            later.push([text, x, y, font, fill, align]);
+            const x0 = align === 'center' ? x - w / 2 : x;
+            return [x0 - 2, y - h / 2 - 1, x0 + w + 2, y + h / 2 + 1];
         };
+        // (a tier of names, all or none: if one of those in view cannot be written clear of the rest, none of them is)
+        const tier = (items) => {
+            const mark = placed.length, boxes = [];
+            for (const it of items) {
+                const b = boxOf(it.text, it.x, it.y, it.font, it.align);
+                if (!fits(b)) { placed.length = mark; return false; }
+                boxes.push(b);
+            }
+            items.forEach((it, j) => { if (it.tag) this.labelBoxes.push({ ...it.tag, box: boxes[j] }); later.push([it.text, it.x, it.y, it.font, it.fill, it.align]); });
+            return true;
+        };
+        const clip = pr.clip, inView = (q) => q && (!clip || (q[0] >= clip.left && q[0] <= clip.left + clip.width && q[1] >= clip.top && q[1] <= clip.top + clip.height));
         const pos = d.cities.map((c, i) => { const u = dr && dr.i === i ? dr.u : c.u, v = dr && dr.i === i ? dr.v : c.v; return pr.at(u, v); });
         this.screenPos = pos;
-        if (sh.names && sh.fills) for (let i = 0; i < d.cities.length; i++) {
-            const c = d.cities[i], q = pos[i]; if (!c.capital || !q) continue;
-            label((this.names.kingdoms[c.kingdom] ?? '').toUpperCase(), q[0], q[1] - 22, "600 15px Georgia, 'Times New Roman', serif", kcol(c.kingdom, 1), 'center', { kind: 'k', i: c.kingdom });
+        // (the kingdoms' names over their capitals — or, where they do not all fit, in the legend)
+        let inLegend = false;
+        if (sh.names && sh.fills) {
+            const ks = [];
+            for (let i = 0; i < d.cities.length; i++) {
+                const c = d.cities[i], q = pos[i]; if (!c.capital || !inView(q)) continue;
+                ks.push({ text: (this.names.kingdoms[c.kingdom] ?? '').toUpperCase(), x: q[0], y: q[1] - 22, font: "600 15px Georgia, 'Times New Roman', serif", fill: kcol(c.kingdom, 1), align: 'center', tag: { kind: 'k', i: c.kingdom } });
+            }
+            inLegend = !tier(ks);
         }
-        const order = d.cities.map((_, i) => i).sort((a, b) => (d.cities[b].capital - d.cities[a].capital) || (d.cities[b].people - d.cities[a].people));
+        if (inLegend !== this.kingdomsInLegend) { this.kingdomsInLegend = inLegend; queueMicrotask(() => this.onLegend?.()); }
+        const order = d.cities.map((_, i) => i).sort((a, b) => (d.cities[b].crown - d.cities[a].crown) || (d.cities[b].people - d.cities[a].people));
         for (const i of [...order].reverse()) {
             const c = d.cities[i], q = pos[i]; if (!q) continue;
-            const [x, y] = q, r = c.capital ? 7 : 2.5 + Math.min(2.5, Math.max(0, Math.log10(Math.max(1, c.people)) - 3));
-            ctx.lineWidth = 1.3; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.fillStyle = c.capital ? kcol(c.kingdom) : 'rgba(250,242,222,1)';
-            if (c.capital) { star(ctx, x, y, r); ctx.fill(); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); }
+            const [x, y] = q, r = c.crown ? (c.capital ? 7 : 6) : 2.5 + Math.min(2.5, Math.max(0, Math.log10(Math.max(1, c.people)) - 3));
+            ctx.lineWidth = 1.3; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.fillStyle = c.crown ? kcol(c.kingdom) : 'rgba(250,242,222,1)';
+            if (c.crown) { star(ctx, x, y, r); ctx.fill(); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); }
             if (c.port) { ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.strokeStyle = 'rgba(25,45,95,0.95)'; ctx.stroke(); }
             if (dr && dr.i === i) { ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 2 * Math.PI); ctx.strokeStyle = 'rgba(158,43,37,0.9)'; ctx.lineWidth = 2; ctx.stroke(); }
             placed.push([x - r, y - r, x + r, y + r]);
         }
-        if (sh.names) for (const i of order) {
-            const c = d.cities[i], q = pos[i]; if (!q) continue;
-            label(this.names.cities[i] ?? '', q[0] + (c.capital ? 7 : 4) + 4, q[1], `${c.capital ? '600 13px' : c.people >= 15000 ? '12px' : '11px'} Georgia, 'Times New Roman', serif`, 'rgba(40,25,15,1)', 'left', { kind: 'c', i });
+        // (then the capitals' names, all or none; and only if they all fit, the towns', all or none)
+        if (sh.names) {
+            const item = (i) => { const c = d.cities[i], q = pos[i]; return { text: this.names.cities[i] ?? '', x: q[0] + (c.crown ? 7 : 4) + 4, y: q[1], font: `${c.crown ? '600 13px' : c.people >= 15000 ? '12px' : '11px'} Georgia, 'Times New Roman', serif`, fill: 'rgba(40,25,15,1)', align: 'left', tag: { kind: 'c', i } }; };
+            const seen = order.filter(i => inView(pos[i]));
+            if (tier(seen.filter(i => d.cities[i].crown).map(item))) tier(seen.filter(i => !d.cities[i].crown).map(item));
         }
         for (const [text, x, y, font, fill, align] of later) {
             ctx.font = font; ctx.textAlign = align; ctx.textBaseline = 'middle';
@@ -614,7 +651,7 @@ export class Realm {
     routeRuns() {
         const d = this.data;
         if (this.runsFor === d) return this.runs;
-        const kind = (r) => { const A = d.cities[r.a], B = d.cities[r.b]; return A?.capital && B?.capital ? 'major' : (A?.capital || B?.capital) && A?.kingdom === B?.kingdom ? 'road' : 'trail'; };
+        const kind = (r) => { const A = d.cities[r.a], B = d.cities[r.b]; return A?.crown && B?.crown ? 'major' : (A?.crown || B?.crown) && A?.kingdom === B?.kingdom ? 'road' : 'trail'; };
         this.runs = [];
         for (const r of d.routes) {
             let start = 0;

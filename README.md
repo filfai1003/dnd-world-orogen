@@ -4,10 +4,10 @@ Fork personale di [World Orogen](https://github.com/raguilar011095/planet_height
 
 Cosa cambia rispetto all'originale:
 
-- **Pannello sinistro**: solo la generazione del mondo, con tutti gli slider e un campo per scrivere il valore. **Pannello destro**: la politica (regni, città, sentieri).
+- **Pannello sinistro**: solo la generazione: dettaglio, continenti e terre emerse con *Genera mondo*; numero di regni e città con *Genera regni* (ogni slider ha un campo per scrivere il valore; gli altri comandi sono nascosti per ora). **A destra**: solo la visualizzazione, in una colonna di icone; i pannelli che apre si posano sopra la mappa senza spostarla.
 - **Mappa componibile**: una base (Terreno antico, Satellite, Temperatura per anno/gennaio/luglio con il mare tutto blu, Fertilità con terre coltivabili, aridità o stagione di crescita) e sopra, sommabili, la Politica, i Venti o le Correnti marine, e la Geologia materiale per materiale (zone probabili e giacimenti più ricchi).
-- **Rotazione**: la mappa ruota in longitudine trascinandola, o scrivendo i gradi in alto. Van der Grinten, rilievo sempre acceso, nuvole spente, fiumi per regime dal blu scuro al celeste.
-- **Regni e città** (`js/realm/`): piazzati dove cibo, acqua dolce e porti si incontrano, bilanciati per sfamarsi da soli, con un riassunto per regno; spostabili, aggiungibili e promuovibili a capitale; ricordati dal browser per ogni codice pianeta.
+- **Mouse**: il tasto sinistro gira la mappa in longitudine (o il globo), il tasto centrale sposta la vista, la rotella fa lo zoom; i gradi si possono anche scrivere in alto. Doppio clic su una città o un regno per cambiarne il nome (anche dalla lista, dove i regni partono chiusi). Van der Grinten, rilievo sempre acceso, nuvole spente, fiumi per regime dal blu scuro al celeste.
+- **Regni e città** (`js/realm/`): piazzati dove cibo, acqua dolce e porti si incontrano, bilanciati per sfamarsi da soli, con un riassunto per regno; nomi modificabili; ricordati dal browser per ogni codice pianeta.
 - **Sentieri e rotte**: strade, vie fluviali e rotte marittime che tengono conto di venti, correnti, ghiaccio e mare aperto, con le frecce della corrente lungo le rotte; tempi in giorni.
 - **Esportazione**: salva la mappa esattamente come è composta, nella proiezione scelta.
 

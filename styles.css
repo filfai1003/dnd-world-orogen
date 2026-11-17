@@ -1597,7 +1597,17 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 #realmSection .toggle-label { font-size: 12px; color: var(--ui-label); margin: 4px 0; }
 .realm-list { margin-top: 8px; font-size: 12px; color: var(--ui-body); }
 .realm-k { border-top: 1px solid var(--ui-white-10); padding: 6px 0; }
-.realm-k > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; }
+.realm-k-head { display: flex; align-items: center; gap: 6px; }
+.realm-k-head .realm-name { font-weight: 600; }
+.realm-fold { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; width: 18px; padding: 0; flex: none; }
+.realm-fold:hover { color: var(--ink); }
+.realm-build { margin-top: var(--space-1); }
+.realm-rename {
+    position: fixed; z-index: 60; width: 220px; padding: var(--space-2) var(--space-3);
+    background: var(--bg); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+    font: 400 12px/1.3 var(--font-ui); color: var(--muted);
+}
+.realm-rename input { display: block; width: 100%; margin-top: 4px; padding: 4px 6px; font: 600 14px/1.3 var(--font-ui); color: var(--ink); background: var(--bg); border: var(--line-hair) solid var(--accent); border-radius: var(--radius-sm); }
 .realm-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .realm-name { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--ui-ink); font: inherit; padding: 2px 4px; }
 .realm-name:hover, .realm-name:focus { border-color: var(--ui-white-12); }
@@ -1611,7 +1621,7 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-cap, .realm-del { background: none; border: none; color: var(--ui-muted); cursor: pointer; font-size: 13px; padding: 0 2px; min-width: 18px; }
 .realm-cap.on { color: var(--gold-ink); }
 .realm-del:hover { color: var(--accent); }
-@media (max-width: 768px) { .realm-cap, .realm-del { min-width: 44px; min-height: 44px; } .realm-btn { min-height: 44px; } }
+@media (max-width: 768px) { .realm-cap, .realm-del, .realm-fold { min-width: 44px; min-height: 44px; } .realm-btn { min-height: 44px; } }
 
 /* D&D fork — the map composer's bar (js/dnd/composer.js), the boxes beside the sliders and the Politica panel (js/dnd/panels.js) */
 .dnd-hidden { display: none !important; }

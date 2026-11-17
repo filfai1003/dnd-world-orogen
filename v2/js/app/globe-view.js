@@ -134,6 +134,22 @@ export class GlobeView {
         this.controls.maxDistance = 8;
         this.controls.rotateSpeed = 0.6;
         this.controls.enableZoom = false;                  // (V1's zoom instead, below)
+        // (D&D fork: the mouse's middle button moves the globe in its frame — the camera's view shifted, the globe kept whole)
+        this.controls.mouseButtons.MIDDLE = -1;
+        this.globePan = [0, 0];
+        let mid = null;
+        glCanvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+        glCanvas.addEventListener('pointerdown', e => {
+            if (!this.controls.enabled || e.pointerType !== 'mouse' || e.button !== 1) return;
+            e.preventDefault(); mid = [e.clientX, e.clientY]; glCanvas.setPointerCapture?.(e.pointerId);
+        });
+        glCanvas.addEventListener('pointermove', e => {
+            if (!mid) return;
+            this.globePan[0] += e.clientX - mid[0]; this.globePan[1] += e.clientY - mid[1]; mid = [e.clientX, e.clientY];
+            this.fitCamera();
+        });
+        const midUp = () => { mid = null; };
+        glCanvas.addEventListener('pointerup', midUp); glCanvas.addEventListener('pointercancel', midUp);
         this.zoomTo = this.camera.position.length();
         this._zoomAt = 0;
         glCanvas.addEventListener('wheel', e => {
@@ -183,8 +199,8 @@ export class GlobeView {
         // Keep the whole globe in frame on portrait screens: hold the horizontal FOV at 40° — of the open area beside the
         // panel (js/open-area.js); the picture moves right of the canvas's centre by the open area's shift.
         this.camera.fov = this.fovFor(w, h);
-        const shift = this.openShift || 0;
-        if (shift) this.camera.setViewOffset(w, h, -shift, 0, w, h);
+        const shift = (this.openShift || 0) + (this.globePan?.[0] || 0), lift = this.globePan?.[1] || 0;
+        if (shift || lift) this.camera.setViewOffset(w, h, -shift, -lift, w, h);
         else this.camera.clearViewOffset();
         this.camera.updateProjectionMatrix();
     }
@@ -644,6 +660,7 @@ void main() {
     wireMapFrame(frame) {
         this._mapFrame = frame;
         frame.style.touchAction = 'none';
+        frame.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // (no autoscroll: the middle button pans)
         frame.addEventListener('wheel', e => {
             if (!this.map) return;
             e.preventDefault();
@@ -655,7 +672,9 @@ void main() {
         const down = new Map();                                    // pointer → its last client point
         let pinch = 0, mid = null;
         frame.addEventListener('pointerdown', e => {
-            if (!this.map || (e.pointerType === 'mouse' && e.button !== 0)) return;
+            // (D&D fork: the mouse's middle button pans the map — its left one turns it, js/dnd/composer.js)
+            if (!this.map || (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1)) return;
+            if (e.button === 1) e.preventDefault();
             down.set(e.pointerId, [e.clientX, e.clientY]);
             frame.setPointerCapture?.(e.pointerId);
             pinch = 0;

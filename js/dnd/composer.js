@@ -393,7 +393,8 @@ export class Composer {
         document.addEventListener('pointerdown', (e) => {
             const view = this.pv.view, mv = this.pv.globe.mapView;
             if (view.mode !== 'map' || e.target !== this.pv.ui.map || e.button !== 0 || e.ctrlKey || e.metaKey || this.realm.editing) return;
-            if (mv && mv.zoom > 1.02) return;                  // (zoomed in: the drag pans, as before)
+            // (a mouse's left button always turns the map; a finger turns it only zoomed out — zoomed in, it pans)
+            if (e.pointerType !== 'mouse' && mv && mv.zoom > 1.02) return;
             drag = { x: e.clientX, lon: +slider.value, w: this.pv.globe.mapBox().width };
             e.stopImmediatePropagation(); e.preventDefault();
         }, { capture: true });

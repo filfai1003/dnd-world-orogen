@@ -191,7 +191,7 @@
         <div id="sidebarContent">
         <div id="viewStripSlot"></div>
         <details class="section is-plates" open>
-            <summary>Shape your world</summary>
+            <summary>Il mondo</summary>
             <div class="section-body">
                 <div class="cg">
                     <label>Detail <span class="tip" data-tip="Resolution of the sphere — more detail means finer coastlines and terrain, but takes longer to generate">?</span> <span class="v" id="vN">204,000</span></label>
@@ -211,7 +211,7 @@
                 </div>
             </div>
         </details>
-        <details class="section is-plates">
+        <details class="section is-plates dnd-hidden">
             <summary>Avanzate <span class="tip" data-tip="Le manopole della forma del pianeta: placche, irregolarità, rugosità e varietà dei continenti. Di solito non servono">?</span></summary>
             <div class="section-body">
                 <div class="cg">
@@ -236,14 +236,29 @@
                 </div>
             </div>
         </details>
-        <button id="generate">Build new world</button>
-        <div id="seedRow">
+        <button id="generate">Genera mondo</button>
+        <details class="section is-plates" open>
+            <summary>Regni e città</summary>
+            <div class="section-body">
+                <div class="cg">
+                    <label>Regni <span class="v" id="vRealmK">6</span></label>
+                    <input type="range" id="sRealmK" min="1" max="16" value="6" step="1">
+                </div>
+                <div class="cg">
+                    <label>Città <span class="tip" data-tip="In tutto, comprese le capitali: almeno una per regno">?</span> <span class="v" id="vRealmN">30</span></label>
+                    <input type="range" id="sRealmN" min="1" max="200" value="30" step="1">
+                </div>
+            </div>
+        </details>
+        <button id="realmBuild" class="realm-btn realm-build">Genera regni</button>
+        <div id="realmStatus" class="climate-hint" hidden></div>
+        <div id="seedRow" class="dnd-hidden">
             <input type="text" id="seedCode" placeholder="Planet code" aria-label="Planet code" autocomplete="off" spellcheck="false">
             <button id="copyBtn" title="Copy code" aria-label="Copy code">&#x2398;</button>
             <button id="loadBtn" title="Load planet from code">Load</button>
         </div>
-        <div id="seedError">Invalid planet code</div>
-        <details class="section is-land">
+        <div id="seedError" class="dnd-hidden">Invalid planet code</div>
+        <details class="section is-land dnd-hidden">
             <summary>Terrain sculpting <span class="tip" data-tip="Erosion and smoothing passes that refine the raw terrain. Adjust sliders and click Reapply — no full rebuild needed.">?</span></summary>
             <div class="section-body">
                 <div class="cg">
@@ -279,7 +294,7 @@
                 <button id="reapplyBtn" title="Reapply terrain sculpting" disabled><span class="reapply-icon">&#x21bb;</span> Reapply</button>
             </div>
         </details>
-        <details class="section is-climate">
+        <details class="section is-climate dnd-hidden">
             <summary>Climate <span class="tip" data-tip="The planet's temperature and water cycle, worked through the climate itself — changes apply on slider release, recomputing the climate (a few seconds)">?</span></summary>
             <div class="section-body">
                 <div class="climate-hint">Changes apply on release — the climate is recomputed.</div>
@@ -448,7 +463,7 @@
         </svg>
         <span>Rebuild (0)</span>
     </button>
-    <div id="info">Drag to rotate &middot; Scroll to zoom &middot; Ctrl-click (&#8984;-click on a Mac) to reshape continents</div>
+    <div id="info">Trascina per girare il globo &middot; tasto centrale per spostarlo &middot; rotella per lo zoom &middot; doppio clic su un nome per cambiarlo</div>
 
         <aside id="dndRight" class="dnd-right" aria-label="Politica">
         <div class="dnd-right-head">
@@ -460,16 +475,7 @@
         </div>
         <div id="realmSection" class="dnd-right-body">
             <div class="section-body">
-                <div class="cg">
-                    <label>Regni <span class="v" id="vRealmK">6</span></label>
-                    <input type="range" id="sRealmK" min="1" max="16" value="6" step="1">
-                </div>
-                <div class="cg">
-                    <label>Città in tutto <span class="tip" data-tip="Comprese le capitali: almeno una per regno">?</span> <span class="v" id="vRealmN">30</span></label>
-                    <input type="range" id="sRealmN" min="1" max="200" value="30" step="1">
-                </div>
-                <button id="realmBuild" class="realm-btn">Piazza regni e città</button>
-                <div class="realm-row">
+                <div class="realm-row dnd-hidden">
                     <button id="realmEdit" class="realm-btn" type="button">Modifica città</button>
                     <button id="realmReset" class="realm-btn" type="button" title="Dimentica le modifiche a mano e piazza tutto di nuovo">Ricomincia</button>
                 </div>
@@ -478,7 +484,7 @@
                 <label class="toggle-label"><input type="checkbox" id="chkRealmBorders"><span class="toggle-track"><span class="toggle-thumb"></span></span>Confini</label>
                 <label class="toggle-label"><input type="checkbox" id="chkRealmRoutes"><span class="toggle-track"><span class="toggle-thumb"></span></span>Sentieri e rotte</label>
                 <label class="toggle-label"><input type="checkbox" id="chkRealmNames"><span class="toggle-track"><span class="toggle-thumb"></span></span>Nomi</label>
-                <div id="realmStatus" class="climate-hint" hidden></div>
+                <div class="climate-hint">Per cambiare un nome scrivilo qui nella lista, o fai doppio clic sulla mappa</div>
                 <div id="realmList" class="realm-list"></div>
             </div>
         </div>

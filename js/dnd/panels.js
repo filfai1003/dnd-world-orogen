@@ -49,7 +49,8 @@ export function dockLayout(pv, composer) {
         } else {
             if (dock.parentElement !== document.body) document.body.appendChild(dock);
             dock.classList.remove('in-sheet');
-            window.__openRight = Math.round(dock.getBoundingClientRect().width) + 24;
+            // (only the rail kept clear: a panel it opens lies over the map, which stays where it is)
+            window.__openRight = Math.round(($('dndRail') ?? dock).getBoundingClientRect().width) + 24;
         }
         if (pv.globe) pv.globe._dirty = true;
         pv.onChange?.('view');

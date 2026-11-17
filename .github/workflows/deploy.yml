@@ -3,6 +3,10 @@ name: Deploy to GitHub Pages
 on:
   release:
     types: [published]
+  # (D&D fork: every push to main publishes, and it can be run by hand from the Actions tab)
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: "pages"

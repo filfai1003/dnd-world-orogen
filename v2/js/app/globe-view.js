@@ -621,7 +621,7 @@ void main() {
                 pb[3] - (0.5 + (y - box.top - box.height / 2) / (box.height * v.zoom) + v.panY) * ph];   // (as mapFrac, from this box)
             const eq = this.map.projection === 'equirect';
             return { kind: 'map', id: this.map.projection, opts: this.map.projOpts || {}, centre: this.map.centerLon * Math.PI / 180, toClient, fromClient,
-                xRange: eq ? [pb[0] + v.panX * pw, pb[0] + (v.panX + 1) * pw] : null,
+                xRange: null,
                 key: [this.map.projection, JSON.stringify(this.map.projOpts), this.map.centerLon, v.zoom, v.panX, v.panY, box.left, box.top, box.width, box.height].join('|') };
         }
         const cam = this.camera, d = cam.position.length(), q = new THREE.Vector3();
@@ -651,7 +651,8 @@ void main() {
     /** At least half the map kept in view; the equirectangular map wraps east–west instead. */
     clampPan() {
         const v = this.mapView;
-        v.panX = this.map.projection === 'equirect' ? v.panX - Math.round(v.panX) : clamp(v.panX, -0.5, 0.5);
+        // (D&D fork: no east–west wrap — the map moves with the pointer in every projection; turning it is the centre's job)
+        v.panX = clamp(v.panX, -0.5, 0.5);
         v.panY = clamp(v.panY, -0.5, 0.5);
         this._dirty = true;
     }
@@ -739,7 +740,7 @@ void main() {
         // (the whole frame drawn: its pixels → the box's places, at the zoom and pan; y from the bottom)
         const zw = b.width * v.zoom, zh = b.height * v.zoom;
         u.uView.value.set(f.width / zw, f.height / zh, 0.5 + (f.left - b.left - b.width / 2) / zw + v.panX, 0.5 - (f.top + f.height - b.top - b.height / 2) / zh - v.panY);
-        u.uWrap.value.set(this.map.projection === 'equirect' ? 1 : 0, v.panX);
+        u.uWrap.value.set(0, v.panX);
         r.setViewport(f.left - c.left, c.height - (f.top - c.top) - f.height, f.width, f.height);      // (from the bottom)
         r.render(this.mapScene, this.camera);                                                         // (its background clears the whole canvas)
         r.setViewport(0, 0, c.width, c.height);

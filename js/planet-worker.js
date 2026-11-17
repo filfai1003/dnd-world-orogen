@@ -125,9 +125,13 @@ function sharedPayload(present, mesh, r_xyz, seed) {
     const story = storyFrame(ff);
     for (const v of Object.values(story)) if (ArrayBuffer.isView(v)) transfer.push(v.buffer);
     const s = w.surface, surface = { heightKm: copy(s.heightKm), recCell: copy(s.recCell), cues: copy(s.cues), carveIn: Object.fromEntries(Object.entries(s.carveIn).map(([k, a]) => [k, copy(a)])) };
+    // (the land kept off the poles: the picture's heights and the finish's)
+    const hk = copy(w.heightKm);
+    sinkPoles(tm.xyz, hk, surface.heightKm);
+    surface.maxLat = MAX_LAT;
     const payload = {
         mesh: { numCells: tm.numCells, xyz: copy(tm.xyz), adjOffset: copy(tm.adjOffset), adjList: copy(tm.adjList) },
-        heightKm: copy(w.heightKm), shade: copy(w.shade), story, regionCell: copy(present.regionCell),
+        heightKm: hk, shade: copy(w.shade), story, regionCell: copy(present.regionCell),
         finish: { frame, simMesh: { numCells: sim.numCells, xyz: copy(sim.xyz), adjOffset: copy(sim.adjOffset), adjList: copy(sim.adjList) }, seed, surface,
             terrain: presentTerrainOverrides({ knobs: present.knobs }), finish: finishOverrides(present.knobs ?? {}) },
     };
@@ -259,7 +263,21 @@ function importGround(data, again = false) {
     self.postMessage({ type: again ? 'reapplyDone' : 'done', seed, shared, _workerTotal: performance.now() - t0 }, transfer);
 }
 
+// (D&D fork: no land beyond this latitude, north or south — the land there sunk below the sea, the coast eased in over a
+// few degrees; 90 is no limit. Set by every message that carries it.)
+let MAX_LAT = 90;
+function sinkPoles(xyz, ...fields) {
+    if (!(MAX_LAT < 90)) return;
+    const n = fields[0].length;
+    for (let r = 0; r < n; r++) {
+        const lat = Math.abs(Math.asin(Math.max(-1, Math.min(1, xyz[3 * r + 2])))) * 180 / Math.PI;   // (the terrain mesh: z north)
+        if (lat < MAX_LAT - 4) continue;
+        const f = Math.min(1, (lat - (MAX_LAT - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - MAX_LAT);
+        for (const h of fields) if (h[r] > sea) h[r] = h[r] * (1 - f) + sea * f;
+    }
+}
 self.onmessage = (e) => {
+    if (e.data.maxLat !== undefined) MAX_LAT = +e.data.maxLat || 90;
     const handlers = { generate: handleGenerate, reapply: handleReapply, editRecompute: handleEditRecompute, importHeightmap: (d) => importGround(d) };
     const run = handlers[e.data.cmd];
     if (!run) { self.postMessage({ type: 'error', message: `Unknown command: ${e.data.cmd}` }); return; }

@@ -63,6 +63,25 @@ export function dockLayout(pv, composer) {
 
 /** The view options trimmed, and the look a campaign map keeps. */
 export function trimView(pv) {
+    // (the rivers and lakes: a level in place of the switch — off, or few, normal, many rivers — remembered)
+    const wl = $('chkWater')?.closest('label');
+    if (wl) {
+        const box = document.createElement('span');
+        box.className = 'vs-item'; box.title = 'How many rivers are drawn: Low — the great rivers (150 m³/s and more); Medium — 40 m³/s; High — 8 m³/s; Off — no rivers or lakes';
+        box.innerHTML = '<label for="dndRivers">Rivers</label><select id="dndRivers"><option value="off">Off</option><option value="150">Low</option><option value="40">Medium</option><option value="8">High</option></select>';
+        wl.after(box); wl.classList.add('dnd-hidden');
+        const sel = box.querySelector('select');
+        let lv = '40'; try { lv = localStorage.getItem('dnd.rivers') || '40'; } catch { /* */ }
+        const apply = (v) => {
+            pv.view.water = v !== 'off'; if (v !== 'off') pv.view.riverQ = +v;
+            if ($('chkWater')) $('chkWater').checked = pv.view.water;
+            if ($('riverDensity') && v !== 'off') $('riverDensity').value = v;
+            try { localStorage.setItem('dnd.rivers', v); } catch { /* */ }
+        };
+        // (set at once, before the page has a world; repainted only on a change)
+        sel.value = lv; apply(lv);
+        sel.addEventListener('change', () => { apply(sel.value); pv.onChange?.('water'); });
+    }
     // (the degrees' numbers round the map: on or off, remembered)
     const deg = $('chkDegrees');
     if (deg) {

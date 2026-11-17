@@ -55,6 +55,14 @@ const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location
 const view = pv.view;
 // (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });
+// (D&D fork: the land's latitude limit — remembered by this browser, set by a campaign link; the next world built keeps to it)
+{
+    const sl = $('sMaxLat'), show = () => { $('vMaxLat').textContent = +sl.value >= 90 ? 'No limit' : `${sl.value}°`; };
+    try { const kept = localStorage.getItem('dnd.maxLat'); if (kept) sl.value = kept; } catch { /* */ }
+    if (realm.presetMaxLat) sl.value = String(realm.presetMaxLat);
+    show();
+    sl.addEventListener('input', () => { show(); try { localStorage.setItem('dnd.maxLat', sl.value); } catch { /* */ } });
+}
 trimView(pv);
 // (once the page's own state below is set up: the composer, the sliders' boxes, the Politica panel, the map to start)
 queueMicrotask(() => {
@@ -96,7 +104,7 @@ startWorker();
 /** The sliders, as the worker reads them. */
 function sliders() {
     const v = (id) => +$(id).value;
-    return { N: detailFromSlider(v('sN')), P: v('sP'), jitter: v('sJ'), nMag: v('sNs'), numContinents: v('sCn'), terrainWarp: v('sTw'), smoothing: v('sS'),
+    return { maxLat: $('sMaxLat') ? +$('sMaxLat').value : 90, N: detailFromSlider(v('sN')), P: v('sP'), jitter: v('sJ'), nMag: v('sNs'), numContinents: v('sCn'), terrainWarp: v('sTw'), smoothing: v('sS'),
         hydraulicErosion: v('sHEr'), thermalErosion: v('sTEr'), ridgeSharpening: v('sRs'), glacialErosion: v('sGl'), continentSizeVariety: v('sCsv'),
         greenhouse: v('sTmp'), precipitationOffset: v('sPrc'), landCoverage: v('sLc') };
 }
@@ -416,7 +424,7 @@ const exportPanel = initEvolutionExport({
     names: (ctx, opts) => { const c = Math.round(opts.centerLon || 0); return { start: ['orogen', ctx.seed], end: [c ? `c${Math.abs(c)}${c > 0 ? 'E' : 'W'}` : null] }; },
     about: (ctx) => ({ page: 'Generate', planet: `planet code ${ctx.seed}`, link: `https://orogen.studio/generate#${ctx.seed}` }) });
 // (D&D fork: a hook to check the realm's maps from the console — window.__dnd.map(2048, 'dndPolitical') → { kind, W, H, data })
-window.__dnd = { realm, composer, map: (W, id) => composer.produce({ W, fin: world.fin, look: { lut: heightLutOf(view.palette), exaggeration: pv.SHADING.exaggeration, water: view.water, riverQ: view.riverQ, byRegime: view.byRegime, centerLon: 0, shaded: true } }, { row: { id } }) };
+window.__dnd = { realm, composer, world: () => world, map: (W, id) => composer.produce({ W, fin: world.fin, look: { lut: heightLutOf(view.palette), exaggeration: pv.SHADING.exaggeration, water: view.water, riverQ: view.riverQ, byRegime: view.byRegime, centerLon: 0, shaded: true } }, { row: { id } }) };
 $('exportBtn').addEventListener('click', () => {
     if (world?.fin) { exportPanel.open(); return; }
     // (the maps come from the finished world: a few seconds after the planet)

@@ -91,6 +91,7 @@ export async function finishPlanet({ frame, simMesh, seed, cells, pool = null, c
     let meanderV = null;
     if (n <= PREP_CELLS) { prepareCarve(ladder, broad ? [[broad, mesh]] : []); meanderV = meanderValues(mesh, seed, F, fade); }
     let surf = await surfJob;
+    const maxLat = surf?.maxLat ?? 90;                                // (D&D fork: kept, the surface let go below)
     if (closePool) pool?.terminate();                                 // (its workers' memory back before the heavy stages)
     if (warped) pool?.forget?.(warped);
     let carveIn = surf.carveIn;
@@ -251,6 +252,17 @@ export async function finishPlanet({ frame, simMesh, seed, cells, pool = null, c
 
     // ── the sea: water below sea level that the open ocean reaches (fjords, sunk basins); hollows it cannot reach stay land ──
     onStage('sea');
+    // (D&D fork: a page's latitude limit on the land — surface.maxLat — kept to the end: beyond it, the sea, whatever
+    // the carving, the sediment or the ice did there)
+    if (maxLat < 90 && mesh.xyz) {
+        const L = maxLat;
+        for (let c = 0; c < n; c++) {
+            const lat = Math.abs(Math.asin(Math.max(-1, Math.min(1, mesh.xyz[3 * c + 2])))) * 180 / Math.PI;   // (this mesh: z north)
+            if (lat < L - 4) continue;
+            const f = Math.min(1, (lat - (L - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - L);
+            if (C.z[c] > sea) C.z[c] = C.z[c] * (1 - f) + sea * f;
+        }
+    }
     let ocean = oceanMask(mesh, C.z);
     // (an inland sea the ocean all but reaches — behind a low, short barrier — is opened into it; one left closed is a
     // remnant of the sea in a basin, for the hydrology: finish-hydro.js)

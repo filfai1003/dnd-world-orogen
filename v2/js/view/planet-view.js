@@ -420,7 +420,7 @@ export class PlanetView {
     }
     /** What the patch's tiles are painted for: a number that changes when the layer, its colours or what is drawn over it do. */
     patchLookOf(fin) {
-        const v = this.view, key = `${v.layer}|${v.palette}|${v.season}|${v.shaded}|${v.water}|${v.riverQ}|${v.byRegime}|${v.grid}|${v.gridStep}${GEOLOGY_LAYERS.has(v.layer) ? `|${v.deposit}|${v.age}|${v.ageRes}` : ''}${FARMING_LAYERS.has(v.layer) ? `|${farmOptionsKey()}` : ''}`;
+        const v = this.view, key = `${v.layer}|${v.palette}|${v.season}|${v.shaded}|${v.water}|${v.riverQ}|${v.byRegime}|${v.grid}|${v.gridStep}${GEOLOGY_LAYERS.has(v.layer) ? `|${v.deposit}|${v.age}|${v.ageRes}` : ''}${FARMING_LAYERS.has(v.layer) ? `|${farmOptionsKey()}` : ''}|${this.extraLines ? this.extraLinesKey(v) : ''}`;
         if (key !== this.patchLookKey || fin.climate !== this.patchClimate) { this.patchLookKey = key; this.patchClimate = fin.climate; this.patchLook++; }
         return this.patchLook;
     }
@@ -450,18 +450,22 @@ export class PlanetView {
         if (t.look === look) return t.canvas;
         const view = this.view, W = t.win.W, lut = heightLutOf(view.layer === 'heightmap' ? 'heightmap' : view.palette), water = view.water && ((view.layer === 'terrain' || view.layer === 'realm') || view.layer === 'satellite');
         const C = CLIMATE_LAYERS.has(view.layer) ? fin.climate : null, geo = GEOLOGY_LAYERS.has(view.layer), farm = FARMING_LAYERS.has(view.layer), tc = this.tileColors;
+        const own = !!this.ownLayers?.has(view.layer);
         if (tc.look !== look) { tc.look = look; tc.byWidth.clear(); }
-        if ((C || geo || farm) && !tc.byWidth.has(W)) tc.byWidth.set(W, geo ? finishedGeologyColor(view.layer, W, fin, view.deposit, view.age, view.ageRes) : farm ? finishedFarmingColor(view.layer, fin, W)
+        if ((C || geo || farm || own) && !tc.byWidth.has(W)) tc.byWidth.set(W, own ? this.ownLayers.colorAt(view.layer, fin, W, lut, view) : geo ? finishedGeologyColor(view.layer, W, fin, view.deposit, view.age, view.ageRes) : farm ? finishedFarmingColor(view.layer, fin, W)
             : finishedClimateColor(view.layer, view.season, C, W, lut, fin));
         if (this.tileImage?.width !== t.win.w || this.tileImage.height !== t.win.h) this.tileImage = new ImageData(t.win.w, t.win.h);
-        paintWindow(t.data, t.win, this.tileImage.data, lut, { exaggeration: this.SHADING.exaggeration * (view.layer === 'satellite' ? 1.25 : 1), lakes: water || view.layer === 'satellite' || geo || farm, shaded: view.shaded,
-            colorAt: C || geo || farm ? tc.byWidth.get(W) : null });
+        paintWindow(t.data, t.win, this.tileImage.data, lut, { exaggeration: this.SHADING.exaggeration * (view.layer === 'satellite' ? 1.25 : 1), lakes: water || view.layer === 'satellite' || geo || farm || own, shaded: view.shaded,
+            colorAt: C || geo || farm || own ? tc.byWidth.get(W) : null });
         if (!t.canvas) { t.canvas = document.createElement('canvas'); t.canvas.width = t.canvas.height = SLOT; }
         const ctx = t.canvas.getContext('2d'), x0 = t.win.x0 + 1, y0 = t.win.y0 + 1;     // (the canvas's pixel 0, 0 on the planet W px wide)
         ctx.putImageData(this.tileImage, -1, -1);                               // (the window's outer pixel the hillshade's neighbours only)
         // (the planet's rivers, crisp: a little thicker the closer the view, not as thick as the picture's enlarged)
         // (and on Farmland, as the picture has them: the water canals and floods come from)
         if (view.water && ((view.layer === 'terrain' || view.layer === 'realm') || view.layer === 'farmLand') && fin.rivers) drawRiversWindow(ctx, fin, view.riverQ, view.byRegime && (view.layer === 'terrain' || view.layer === 'realm'), W, x0, y0, SLOT, SLOT, 2 * (W / 4096) ** 0.3 / (W / 2048));
+        // (D&D fork: the page's own lines and areas — the kingdoms' colours, the arrows, the materials' zones — on the close-up
+        // too, drawn at the close-up's width and moved to this tile)
+        if (this.extraLines) { ctx.save(); ctx.translate(-x0, -y0); this.extraLines(ctx, W, view); ctx.restore(); }
         if (view.grid) {
             // (the grid's lines, as thin as the screen's pixels)
             const st = view.gridStep, w0 = x0 / W * 360 - 180, e0 = (x0 + SLOT) / W * 360 - 180, n0 = 90 - y0 / (W >> 1) * 180, s0 = 90 - (y0 + SLOT) / (W >> 1) * 180;

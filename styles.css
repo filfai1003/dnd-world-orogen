@@ -1600,8 +1600,10 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-k-head { display: flex; align-items: center; gap: 6px; }
 .realm-k-head .realm-name { font-weight: 600; }
 .realm-wish-sum { margin: 0 0 0 48px; font: 400 11px/1.3 var(--font-ui); color: var(--muted); }
-.realm-wishes { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin: 6px 0 6px 18px; font: 400 11px/1.2 var(--font-ui); color: var(--muted); }
+.realm-wishes { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 8px; align-items: center; margin: 6px 0 6px 18px; font: 400 11px/1.2 var(--font-ui); color: var(--muted); }
 .realm-wishes label { display: contents; }
+.realm-must-head { font: 600 10px/1 var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.realm-must { margin: 0; accent-color: var(--accent); cursor: pointer; }
 .realm-wishes .realm-clim { max-width: none; width: 100%; }
 .realm-color { width: 22px; height: 22px; padding: 0; border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); background: none; cursor: pointer; flex: none; }
 .realm-color::-webkit-color-swatch-wrapper { padding: 2px; }
@@ -1749,3 +1751,5 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 
 /* D&D fork: the degrees' numbers round the map, switched off (js/dnd/panels.js) */
 body.dnd-no-degrees .gf-num { display: none; }
+.dnd-warm { color: var(--accent); font-weight: 600; }
+.dnd-cold { color: var(--logo-blue); font-weight: 600; }

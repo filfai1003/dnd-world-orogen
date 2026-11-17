@@ -4,7 +4,7 @@
 // (areas and arrows, which belong to the ground) and on a screen layer over it (marks, names and lines, the same size at
 // any zoom), and once more, at the export's width, for the map saved.
 
-import { finishedClimateValue, drawArrows } from '../../v2/js/evolution/climate-view.js';
+import { finishedClimateValue } from '../../v2/js/evolution/climate-view.js';
 import { colorMap, satelliteMap, farmingMap, climateMap, paintAt, rollRows, rollShift } from '../../v2/js/evolution/export.js';
 import { DEPOSITS, METALS } from '../../v2/js/geology/deposits.js';
 import { P as PROJ } from '../../v2/js/view/projections.js';
@@ -45,6 +45,50 @@ function tempLegend(season) {
         <div class="dnd-ramp" style="background:linear-gradient(90deg, ${g})"></div>
         <div class="dnd-ramp-labels"><span>−30 °C</span><span>0</span><span>15</span><span>32 °C</span></div>`;
 }
+/**
+ * The winds' or the currents' arrows (as the Wind and Currents views draw them), each coloured by how warm it runs for its
+ * latitude: red warmer than the rest of its latitude's air or sea, blue colder — a warm current, a cold one; a warm wind,
+ * a cold one. `C`: the 1° climate (360 × 180, rows from the north).
+ */
+function warmColdArrows(ctx, width, wind, season, C) {
+    const H = width / 2, px = width / 360;
+    const U = wind ? C.u?.[season] : C.currentU?.[season], V = wind ? C.v?.[season] : C.currentV?.[season];
+    const T = wind ? C.T?.[season] : (C.Tsea ?? C.T)?.[season], only = wind ? null : C.sea;
+    if (!U || !V) return;
+    // (each latitude's mean, over the sea alone for the currents)
+    const mean = new Float32Array(180);
+    if (T) for (let j = 0; j < 180; j++) { let s = 0, n = 0; for (let i = 0; i < 360; i++) { const c = j * 360 + i; if (only && !only[c]) continue; if (Number.isFinite(T[c])) { s += T[c]; n++; } } mean[j] = n ? s / n : 0; }
+    const speeds = [];
+    for (let c = 0; c < U.length; c += 7) if (!only || only[c]) speeds.push(Math.hypot(U[c], V[c]));
+    speeds.sort((a, b) => a - b);
+    const strong = speeds[Math.floor(0.95 * (speeds.length - 1))] || 1;
+    const step = wind ? 7.5 : 6, full = step * px * 0.9, NB = 9, paths = Array.from({ length: NB }, () => new Path2D());
+    for (let lat = 90 - step / 2; lat > -90; lat -= step) {
+        const cl = Math.cos(lat * Math.PI / 180), lonStep = step / Math.max(0.2, cl);
+        for (let lon = -180 + lonStep / 2; lon < 180; lon += lonStep) {
+            const i = Math.min(359, Math.floor(lon + 180)), j = Math.min(179, Math.floor(90 - lat)), c = j * 360 + i;
+            if (only && !only[c]) continue;
+            const u = U[c], v = V[c], sp = Math.hypot(u, v);
+            if (!(sp > strong * 0.04)) continue;
+            const a = T && Number.isFinite(T[c]) ? T[c] - mean[j] : 0, b = Math.max(0, Math.min(NB - 1, Math.round((Math.max(-1, Math.min(1, a / 4)) + 1) / 2 * (NB - 1))));
+            const len = full * Math.min(1, sp / strong), dx = u / sp * len / Math.max(0.2, cl), dy = -v / sp * len;
+            const x0 = (lon + 180) * px - dx / 2, y0 = (90 - lat) / 180 * H - dy / 2, x1 = x0 + dx, y1 = y0 + dy, P = paths[b];
+            P.moveTo(x0, y0); P.lineTo(x1, y1);
+            const an = Math.atan2(dy, dx), hl = Math.min(len * 0.4, 5 * width / 2048);
+            P.moveTo(x1, y1); P.lineTo(x1 - hl * Math.cos(an - 0.45), y1 - hl * Math.sin(an - 0.45));
+            P.moveTo(x1, y1); P.lineTo(x1 - hl * Math.cos(an + 0.45), y1 - hl * Math.sin(an + 0.45));
+        }
+    }
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = Math.min(3.2, Math.max(1.2, width / 1300));
+    const COLD = [35, 85, 205], MID = [125, 105, 140], WARM = [205, 45, 35];
+    paths.forEach((P, b) => {
+        const t = b / (NB - 1) * 2 - 1, from = t < 0 ? MID : MID, to = t < 0 ? COLD : WARM, k = Math.abs(t);
+        ctx.strokeStyle = css([0, 1, 2].map(q => Math.round(from[q] + (to[q] - from[q]) * k)), 0.92);
+        ctx.stroke(P);
+    });
+    ctx.restore();
+}
+
 /** The planet view's own layers (planet-view.js ownLayers): the Temperatura base. */
 export const ownLayers = {
     has: (l) => l === TEMP_LAYER,
@@ -66,7 +110,7 @@ export const MATERIALS = [
 const ZONE_FROM = 0.33, ZONE_FULL = 0.75, RICH = 0.7;
 
 /** Each material's richness grid (0…1) from a finished world's deposits, blurred a little: zones, not exact bodies. */
-function materialGrids(fin) {
+export function materialGrids(fin) {
     const Dp = fin?.raster?.geology?.deposits;
     if (!Dp?.data) return null;
     const K = Dp.cells.length, SYS = DEPOSITS.length, n = Dp.w * Dp.h, out = new Map();
@@ -266,7 +310,7 @@ export class Composer {
     draw(ctx, W, view) {
         const fin = this.world()?.fin;
         if (!fin) return;
-        if (this.flow !== 'none' && fin.climate) drawArrows(ctx, W, this.flow === 'wind' ? 'wind' : 'currents', this.base === 'temp' ? this.tempSeason : 'year', fin.climate);
+        if (this.flow !== 'none' && fin.climate) warmColdArrows(ctx, W, this.flow === 'wind', this.base === 'temp' ? this.tempSeason : 'year', fin.climate);
         if (this.geo.size) { const z = this.zones(fin); if (z) { ctx.imageSmoothingEnabled = true; ctx.drawImage(z, 0, 0, W, W >> 1); } }
     }
     geology(fin) {
@@ -315,14 +359,19 @@ export class Composer {
         if (box) {
             const zl = box.left + box.width / 2 + (-0.5 - mv.panX) * box.width * mv.zoom, zt = box.top + box.height / 2 + (-0.5 - mv.panY) * box.height * mv.zoom;
             const fr = gl.map?.frame?.getBoundingClientRect?.() ?? { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
-            const L = Math.max(zl, fr.left), T = Math.max(zt, fr.top), Rr = Math.min(zl + box.width * mv.zoom, fr.right - ((typeof window !== 'undefined' && window.__openRight) || 0)), B = Math.min(zt + box.height * mv.zoom, fr.bottom);
+            // (the equirectangular map wraps east–west as it pans: its width across stays the box's, zoomed about its middle)
+            const eqL = box.left + box.width / 2 - box.width * mv.zoom / 2, xl = fv.xRange ? eqL : zl;
+            const L = Math.max(xl, fr.left), T = Math.max(zt, fr.top), Rr = Math.min(xl + box.width * mv.zoom, fr.right - ((typeof window !== 'undefined' && window.__openRight) || 0)), B = Math.min(zt + box.height * mv.zoom, fr.bottom);
             clip = { left: L, top: T, width: Math.max(0, Rr - L), height: Math.max(0, B - T) };
         }
+        const wrapW = box ? box.width * mv.zoom : 0;
         return { key: `m|${fv.key}`, clip, jump: box ? box.width * mv.zoom / 4 : innerWidth / 4, at: (u, v) => {
             let lon = u * 2 * Math.PI - Math.PI - fv.centre;
             lon = ((lon + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
             const xy = P.fwd(lon, (0.5 - v) * Math.PI, fv.opts);
-            return xy ? fv.toClient(xy[0], xy[1]) : null;
+            if (!xy) return null;
+            const q = fv.toClient(xy[0], xy[1]);
+            return q;
         } };
     }
     drawScreen() {
@@ -378,12 +427,12 @@ export class Composer {
     legend() {
         const el = $('dndLegend'); if (!el) return;
         const parts = [];
-        if (this.flow === 'wind') parts.push('<div class="dnd-leg-row">➝ <b>Winds</b>: where they blow, longer where they are strong</div>');
-        if (this.flow === 'currents') parts.push('<div class="dnd-leg-row">➝ <b>Sea currents</b>: where they carry ships</div>');
+        if (this.flow === 'wind') parts.push('<div class="dnd-leg-row">➝ <b>Winds</b>: where they blow, longer where they are strong; <span class="dnd-warm">red</span> warmer, <span class="dnd-cold">blue</span> colder than their latitude</div>');
+        if (this.flow === 'currents') parts.push('<div class="dnd-leg-row">➝ <b>Sea currents</b>: where they carry ships; <span class="dnd-warm">red</span> warm, <span class="dnd-cold">blue</span> cold</div>');
         if (this.geo.size) parts.push(`<div class="dnd-leg-row">${MATERIALS.filter(m => this.geo.has(m.id)).map(m => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</span>`).join('')}</div><div class="dnd-leg-note">Zones: where the material is likely · Circles: the richest deposits</div>`);
         // (the kingdoms, when their names do not all fit on the map)
         if (this.realm.enabled && this.realm.data && this.realm.kingdomsInLegend) parts.push(`<div class="dnd-leg-row dnd-leg-kingdoms">${this.realm.names.kingdoms.map((n, k) => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${this.realm.colorOf(k)}"></i>${esc(n)}</span>`).join('')}</div>`);
-        if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Routes: roads (brown), river ways (dotted blue), sea routes (dashed blue), with the current’s arrows</div>');
+        if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Routes: roads black, ways by sea and river blue — main ones solid, the rest dashed</div>');
         el.innerHTML = parts.join('');
         el.hidden = !parts.length;
         if (parts.length) $('legendCard').hidden = false;
@@ -433,7 +482,7 @@ export class Composer {
         for (const tx of shift ? [-shift, W - shift] : [0]) {
             ctx.save(); ctx.translate(tx, 0);
             if (this.geo.size) { const z = this.zones(fin); if (z) { ctx.imageSmoothingEnabled = true; ctx.drawImage(z, 0, 0, W, H); } }
-            if (this.flow !== 'none' && fin.climate) drawArrows(ctx, W, this.flow === 'wind' ? 'wind' : 'currents', season, fin.climate);
+            if (this.flow !== 'none' && fin.climate) warmColdArrows(ctx, W, this.flow === 'wind', season, fin.climate);
             ctx.restore();
         }
         if (this.realm.enabled && this.realm.data) this.realm.paint(ctx, W, { ...this.realm.show, cities: true }, shift);

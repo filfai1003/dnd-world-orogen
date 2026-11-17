@@ -7,6 +7,8 @@ import { colorMap, rollShift } from '../../v2/js/evolution/export.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+/** Great-circle km between two cities ({u, v}). */
+const distKm = (a, b) => { if (!a || !b) return 0; const la1 = (0.5 - a.v) * Math.PI, la2 = (0.5 - b.v) * Math.PI, dl = (a.u - b.u) * 2 * Math.PI; return 6371 * Math.acos(Math.max(-1, Math.min(1, Math.sin(la1) * Math.sin(la2) + Math.cos(la1) * Math.cos(la2) * Math.cos(dl)))); };
 const fmt = (n) => Math.round(n).toLocaleString('en-GB');
 
 export const KINGDOM_RGB = [[181, 82, 59], [59, 111, 181], [78, 154, 74], [193, 154, 46], [122, 79, 160], [46, 154, 150], [181, 115, 154], [138, 106, 59],
@@ -28,8 +30,14 @@ const WISHES = [
     ['mountains', 'Mountains', [['', 'Any'], ['near', 'Near high mountains'], ['far', 'Far from mountains']]],
     ['river', 'River', [['', 'Any'], ['yes', 'On a big river']]],
     ['waters', 'Seas', [['', 'Any'], ['calm', 'Calm seas'], ['rough', 'Rough, stormy seas']]],
+    ['currents', 'Currents', [['', 'Any'], ['strong', 'Strong sea currents'], ['weak', 'Weak sea currents']]],
+    ['fertility', 'Fertility', [['', 'Any'], ['high', 'Very fertile land'], ['low', 'Poor land']]],
+    ['ore', 'Riches', [['', 'Any'], ['gems', 'Main gem mines'], ['iron', 'Main iron mines'], ['copper', 'Main copper mines'], ['tin', 'Main tin mines'], ['silver', 'Main silver mines'], ['gold', 'Main gold mines'], ['salt', 'Main salt'], ['coal', 'Main coal']]],
 ];
-const wishText = (p) => WISHES.map(([key, , opts]) => (p?.[key] ? opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '') : null)).filter(Boolean).join(' · ');
+/** A kingdom's wishes in a line — its conditions marked "must". */
+const wishText = (p, names = []) => [...WISHES.map(([key, , opts]) => (p?.[key] ? [key, opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '')] : null)),
+    p?.near !== undefined && p?.near !== '' && names[+p.near] ? ['near', `near ${names[+p.near]}`] : null]
+    .filter(Boolean).map(([key, t]) => (p.req?.[key] ? `must: ${t}` : t)).join(' · ');
 
 const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
 const STAPLE_IT = ['Nothing', 'Paddy grain (rice)', 'Cool-climate grain (wheat, barley, rye)', 'Warm-climate grain (maize, millet, sorghum)', 'Roots and tubers', 'Livestock (milk, meat, wool)', 'Fish', 'Game and wild fruit'];
@@ -54,6 +62,7 @@ export class Realm {
         this.wire();
         // (a campaign's kingdoms from the address: ?realm=… — base64url JSON { cities, kingdoms: [{ name, color, climate, cities: [names] }] })
         try { const r = new URLSearchParams(location.search).get('realm'); if (r) this.preset = JSON.parse(decodeURIComponent(escape(atob(r.replace(/-/g, '+').replace(/_/g, '/'))))); } catch (err) { console.warn('[realm] unreadable preset', err); }
+        if (this.preset?.world?.maxLat) { this.presetMaxLat = this.preset.world.maxLat; try { localStorage.setItem('dnd.maxLat', String(this.presetMaxLat)); } catch { /* */ } }
         // (else the campaign last set up: its peoples kept from world to world, and from visit to visit)
         if (!this.preset) {
             let c = null; try { c = JSON.parse(localStorage.getItem('dnd-campaign') || 'null'); } catch { /* */ }
@@ -116,6 +125,7 @@ export class Realm {
             if (t.dataset.kcol !== undefined) { this.setColor(+t.dataset.kcol, t.value); this.save(); this.renderList(); }
             // (a climate chosen: the kingdoms placed again, each in its own)
             if (t.dataset.kcap !== undefined) { this.names.ncap[+t.dataset.kcap] = +t.value; this.seatsFromCounts(); this.markSeats(); this.changed(); this.save(); }
+            if (t.dataset.kreq !== undefined) { const p = this.names.prefs[+t.dataset.kreq]; p.req ||= {}; if (t.checked) p.req[t.dataset.key] = true; else delete p.req[t.dataset.key]; this.save(); this.auto(); }
             if (t.dataset.kpref !== undefined) { const p = this.names.prefs[+t.dataset.kpref]; if (t.value) p[t.dataset.key] = t.value; else delete p[t.dataset.key]; this.save(); this.auto(); }
         });
         list.addEventListener('input', (e) => { if (e.target.dataset.kcol !== undefined) this.setColor(+e.target.dataset.kcol, e.target.value); });
@@ -218,7 +228,8 @@ export class Realm {
         const K = +$('sRealmK').value;
         this.names.cities = [];
         this.fitNames(K);
-        this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.prefs, mins: (this.names.towns || []).map(t => Math.max(0, (t?.length || 0) - 1)) });
+        this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.prefs, mins: this.names.kingdoms.map((_, k) => Math.max(0, (this.names.towns?.[k]?.length || 0) - 1, (this.names.ncap?.[k] || 1) - 1)),
+            ports: this.names.kingdoms.map((_, k) => (this.names.towns?.[k] || []).filter(t => t && typeof t === 'object' && t.port).length) });
         this.named = false;                            // (the towns' names, if any, given to the new cities)
     }
     /** The realm again from the cities as they stand (moved, added, removed, a capital changed). */
@@ -239,19 +250,37 @@ export class Realm {
         this.data = m; this.ready = true;
         // (names: a kingdom by its index, a city by its place in the list — kept as they were where they still exist)
         this.fitNames(m.K);
+        if (this.named === false) this.seatsFromCounts(m);
         if (this.named === false && this.names.towns?.length) {
+            // (the towns' names: the capital's first, then the other capitals', then by size — save for a town described,
+            // { name, port, small }, given the town that fits it best, the nearest the capital)
             this.names.cities = [];
+            const seats = this.names.seats || [];
             for (let k = 0; k < m.K; k++) {
-                const own = m.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].capital - a[0].capital) || (b[0].people - a[0].people));
-                (this.names.towns[k] || []).forEach((t, j) => { if (own[j] && t) this.names.cities[own[j][1]] = t; });
+                const own = m.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].capital - a[0].capital) || (!!seats[b[1]] - !!seats[a[1]]) || (b[0].people - a[0].people));
+                const cap = own[0]?.[0], used = new Set(), list = this.names.towns[k] || [];
+                list.forEach((t) => {
+                    if (!t || typeof t !== 'object') return;
+                    const fit = own.filter(([c, i]) => !c.capital && !seats[i] && !used.has(i) && (!t.port || c.port));
+                    const pool = fit.length ? fit : own.filter(([c, i]) => !c.capital && !seats[i] && !used.has(i));
+                    pool.sort((a, b) => (t.small ? (a[0].people - b[0].people) / 20000 : 0) + (distKm(a[0], cap) - distKm(b[0], cap)) / 300);
+                    if (pool[0]) { used.add(pool[0][1]); this.names.cities[pool[0][1]] = t.name; }
+                });
+                let j = 0;
+                list.forEach((t) => {
+                    if (!t || typeof t === 'object') return;
+                    while (j < own.length && used.has(own[j][1])) j++;
+                    if (own[j]) { used.add(own[j][1]); this.names.cities[own[j][1]] = t; }
+                });
             }
         }
-        if (this.named === false || !Array.isArray(this.names.seats)) this.seatsFromCounts(m);
+        if (!Array.isArray(this.names.seats)) this.seatsFromCounts(m);
         this.markSeats();
         this.named = true;
         if (this.recentre) { this.recentre = false; this.centreOnLand(); }
         this.names.cities = m.cities.map((c, i) => this.names.cities[i] || (c.capital ? `Capital ${this.romanOf(c.kingdom)}` : `City ${i + 1}`));
-        this.status(`${m.K} kingdoms, ${m.cities.length} cities, ${m.routes.length} links · ${(m.ms / 1000).toFixed(1)} s`);
+        const unmet = (m.unmet || []).map(k => this.names.kingdoms[k]).filter(Boolean);
+        this.status(`${m.K} kingdoms, ${m.cities.length} cities, ${m.routes.length} links · ${(m.ms / 1000).toFixed(1)} s${unmet.length ? ` · No place on this world meets every condition of ${unmet.join(', ')}` : ''}`);
         this.drawCache = null;
         this.changed();
         this.save();
@@ -260,15 +289,20 @@ export class Realm {
     seatsFromCounts(m = this.data) {
         const seats = [];
         for (let k = 0; k < m.K; k++) {
-            const own = m.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].capital - a[0].capital) || (b[0].people - a[0].people));
-            for (let j = 1; j < (this.names.ncap?.[k] || 1) && j < own.length; j++) seats[own[j][1]] = true;
+            // (its other capitals: big towns, and near the first — allied seats, not the far ends of the kingdom)
+            const cap = m.cities.find(c => c.capital && c.kingdom === k);
+            const own = m.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k && !c.capital).sort((a, b) => b[0].people / (1 + distKm(b[0], cap) / 400) - a[0].people / (1 + distKm(a[0], cap) / 400));
+            // (a kingdom with a port town described keeps its ports for it, where it has other towns to crown)
+            const keepPorts = (this.names.towns?.[k] || []).some(t => t && typeof t === 'object' && t.port);
+            const pick = keepPorts && own.filter(([c]) => !c.port).length >= (this.names.ncap?.[k] || 1) - 1 ? own.filter(([c]) => !c.port) : own;
+            for (let j = 0; j < (this.names.ncap?.[k] || 1) - 1 && j < pick.length; j++) seats[pick[j][1]] = true;
         }
         this.names.seats = seats;
     }
     /** A kingdom's colour, as CSS. */
     colorOf(k) { return kcol(k); }
     /** A city crowned: the kingdom's capital, or one of its other capitals. */
-    markSeats() { this.data?.cities.forEach((c, i) => { c.seat = !c.capital && !!this.names.seats?.[i]; c.crown = c.capital || c.seat; }); }
+    markSeats() { this.data?.cities.forEach((c, i) => { c.seat = !c.capital && !!this.names.seats?.[i]; c.crown = c.capital || c.seat; }); this.runsFor = null; }
     romanOf(k) { const r = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI']; return r[k] ?? String(k + 1); }
     removeCity(i) { this.data.cities.splice(i, 1); this.names.cities.splice(i, 1); }
 
@@ -301,8 +335,8 @@ export class Realm {
             const open = this.openK.has(k);
             return `<div class="realm-k${open ? ' open' : ''}">
                 <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"></div>
-                <div class="realm-wish-sum">${esc(wishText(this.names.prefs[k])) || 'Anywhere'}</div>
-                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>${WISHES.map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${(this.names.prefs[k]?.[key] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`).join('')}</div>
+                <div class="realm-wish-sum">${esc(wishText(this.names.prefs[k], this.names.kingdoms)) || 'Anywhere'}</div>
+                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label><span></span><span class="realm-must-head" title="Ticked: a condition, which must hold. Unticked: a preference, met where it can be">Must</span>${[...WISHES, ['near', 'Near', [['', 'Any'], ...this.names.kingdoms.map((n, j) => [String(j), n]).filter(([j]) => +j !== k)]]].map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${String(this.names.prefs[k]?.[key] ?? '') === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label><input type="checkbox" class="realm-must" data-kreq="${k}" data-key="${key}" title="A condition: it must hold"${this.names.prefs[k]?.req?.[key] ? ' checked' : ''}>`).join('')}</div>
                 <div class="realm-facts">
                     <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
@@ -478,35 +512,15 @@ export class Realm {
     paintRoutes(ctx, W, H, s) {
         const d = this.data;
         const kind = (r) => { const A = d.cities[r.a], B = d.cities[r.b]; return A?.crown && B?.crown ? 'major' : (A?.crown || B?.crown) && A?.kingdom === B?.kingdom ? 'road' : 'trail'; };
-        const STY = {
-            land: { major: [2.6 * s, 'rgba(110,55,25,0.95)', []], road: [1.8 * s, 'rgba(120,65,30,0.9)', []], trail: [1.2 * s, 'rgba(120,70,35,0.85)', [3 * s, 2 * s]] },
-            river: [1.6 * s, 'rgba(20,60,120,0.9)', [1 * s, 2.2 * s]],
-            sea: [1.4 * s, 'rgba(25,45,95,0.85)', [6 * s, 3.5 * s]],
-        };
         ctx.lineJoin = 'round'; ctx.lineCap = 'round';
         this.runs = this.routeRuns();
-        // (a pale halo under the roads, so they read over any ground)
-        ctx.strokeStyle = 'rgba(250,240,215,0.5)'; ctx.setLineDash([]);
-        ctx.lineWidth = 3.4 * s; ctx.beginPath();
-        for (const run of this.runs) if (run.mode === 0) strokeWrapped(ctx, run.pts, W, H);
-        ctx.stroke();
+        // (as on screen: roads black, ways by water blue; main ones solid, the rest dashed; no halo, no arrows)
         for (const run of this.runs) {
-            const [w, col, dash] = run.mode === 0 ? STY.land[run.kind] : run.mode === 1 ? STY.river : STY.sea;
-            ctx.lineWidth = w; ctx.strokeStyle = col; ctx.setLineDash(dash);
+            const main = run.kind === 'major', col = run.mode === 0 ? 'rgba(20,18,16,0.9)' : 'rgba(25,75,175,0.9)';
+            ctx.lineWidth = (main ? 1.8 : 1.3) * s; ctx.strokeStyle = col; ctx.setLineDash(main ? [] : run.mode === 0 ? [5 * s, 3.5 * s] : [7 * s, 4 * s]);
             ctx.beginPath(); strokeWrapped(ctx, run.pts, W, H); ctx.stroke();
         }
         ctx.setLineDash([]);
-        // (the current's arrows along the sea routes, every few cells)
-        ctx.strokeStyle = 'rgba(0,118,128,0.95)'; ctx.fillStyle = 'rgba(0,118,128,0.95)'; ctx.lineWidth = 1.4 * s;
-        for (const run of this.runs) {
-            if (run.mode !== 2 || !run.cur) continue;
-            run.raw.forEach((p, k) => {
-                const c = run.cur[k]; if (!c || k % 6 !== 3) return;
-                const sp = Math.hypot(c[0], c[1]); if (!(sp > 0.02)) return;
-                const ex = c[0] / sp, ey = -c[1] / sp;
-                arrow(ctx, p[0] * W + ey * 5 * s, p[1] * H - ex * 5 * s, ex, ey, (5 + Math.min(9, 20 * sp)) * s);
-            });
-        }
     }
     paintCities(ctx, W, H, s, names) {
         const d = this.data, dr = this.drag;
@@ -561,34 +575,14 @@ export class Realm {
             ctx.setLineDash([]);
         }
         // (the routes: roads by their rank, river ways dotted blue, sea routes dashed navy)
+        // (the routes, minimal: roads black — main ones solid, the rest dashed — and the ways by water blue, the same)
         if (sh.routes) {
-            const runs = this.routeRuns();
-            ctx.strokeStyle = 'rgba(250,242,222,0.6)'; ctx.lineWidth = 4.5;
-            ctx.beginPath(); for (const r of runs) if (r.mode === 0) line(r.pts); ctx.stroke();
-            const STY = { major: [2.6, 'rgba(110,55,25,0.95)', []], road: [2, 'rgba(120,65,30,0.92)', []], trail: [1.4, 'rgba(120,70,35,0.9)', [4, 3]] };
-            for (const r of runs) {
-                const [w, col, dash] = r.mode === 0 ? STY[r.kind] : r.mode === 1 ? [2, 'rgba(20,60,130,0.95)', [1, 3.5]] : [1.8, 'rgba(25,45,95,0.9)', [7, 4]];
-                ctx.lineWidth = w; ctx.strokeStyle = col; ctx.setLineDash(dash);
+            for (const r of this.routeRuns()) {
+                const main = r.kind === 'major', col = r.mode === 0 ? 'rgba(20,18,16,0.9)' : 'rgba(25,75,175,0.9)';
+                ctx.lineWidth = main ? 1.8 : 1.3; ctx.strokeStyle = col; ctx.setLineDash(main ? [] : r.mode === 0 ? [5, 3.5] : [7, 4]);
                 ctx.beginPath(); line(r.pts); ctx.stroke();
             }
             ctx.setLineDash([]);
-            // (on the sea routes, the current's arrows: where it sets the ship, and how hard — one every ~50 px)
-            ctx.strokeStyle = 'rgba(0,118,128,0.95)'; ctx.fillStyle = 'rgba(0,118,128,0.95)'; ctx.lineWidth = 1.6;
-            for (const r of runs) {
-                if (r.mode !== 2 || !r.cur) continue;
-                let last = null;
-                r.raw.forEach((p, k) => {
-                    const c = r.cur[k]; if (!c) return;
-                    const sp = Math.hypot(c[0], c[1]); if (!(sp > 0.02)) return;
-                    const q = pr.at(((p[0] % 1) + 1) % 1, p[1]); if (!q) return;
-                    if (last && Math.hypot(q[0] - last[0], q[1] - last[1]) < 50) return;
-                    const lat = (0.5 - p[1]) * Math.PI, step = 0.6 / 360, du = c[0] / sp * step / Math.max(0.2, Math.cos(lat)), dv = -c[1] / sp * step;
-                    const q2 = pr.at((((p[0] + du) % 1) + 1) % 1, p[1] + dv); if (!q2) return;
-                    let ex = q2[0] - q[0], ey = q2[1] - q[1]; const l = Math.hypot(ex, ey); if (!(l > 0) || l > 60) return;
-                    ex /= l; ey /= l; last = q;
-                    arrow(ctx, q[0] + ey * 6, q[1] - ex * 6, ex, ey, 6 + Math.min(10, 22 * sp));
-                });
-            }
         }
         // (the names: the kingdoms' first, over their capitals, then the towns' by importance, none over another)
         const fits = (b) => { for (const o of placed) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; placed.push(b); return true; };

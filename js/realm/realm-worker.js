@@ -21,7 +21,7 @@ self.onmessage = ({ data: msg }) => {
         if (!G) throw new Error('no world');
         const t0 = performance.now();
         if (msg.cmd === 'fixed') G.adapt = adaptOf(msg.prefs);
-        const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || []) : fixedRealm(msg.cities);
+        const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
         res.ms = Math.round(performance.now() - t0);
         self.postMessage({ type: 'realm', id: msg.id, ...res }, [res.owner.buffer]);
     } catch (err) {
@@ -195,7 +195,7 @@ function adaptOf(prefs) {
         return { mt: p.mountains === 'near' || p.height === 'high' || p.height === 'hills' && p.mountains !== 'far' || p.climate === 'highlands',
             des: p.climate === 'desert' || p.climate === 'steppe' || p.rain === 'arid',
             cold: p.climate === 'taiga' || p.climate === 'tundra' || p.temp === 'cold' || p.temp === 'cool',
-            sea: p.sea === 'coast' || p.waters === 'rough' };
+            sea: p.sea === 'coast' || p.waters === 'rough' || p.currents === 'strong' };
     });
 }
 function stepCost(a, b, d, ex, ny, mode, port) {
@@ -312,41 +312,70 @@ const CLIMATE_RE = { tropical: /^A/, desert: /^BW/, steppe: /^BS/, mediterranean
 const TEMP = { hot: [20, 99], warm: [13, 22], mild: [7, 15], cool: [0, 9], cold: [-99, 2] };
 const RAIN = { arid: [0, 250], dry: [250, 600], moderate: [600, 1200], wet: [1200, 99999] };
 const HEIGHT = { low: [-999, 300], hills: [250, 1000], high: [900, 99999] };
-/** The wishes as tests, each with its weight. */
+/** The wishes as tests: [key, weight, test]. */
 function wishes(p) {
     if (typeof p === 'string') p = { climate: p };
     const g = G, out = [];
     if (!p) return out;
-    if (p.climate === 'highlands') out.push([2, c => g.heightM[c] >= 1000]);
-    else if (CLIMATE_RE[p.climate]) { const re = CLIMATE_RE[p.climate]; out.push([2, c => re.test(g.codes[g.koppen[c]] || '')]); }
-    if (TEMP[p.temp]) { const [a, b] = TEMP[p.temp]; out.push([1.5, c => g.tempC[c] >= a && g.tempC[c] <= b]); }
-    if (RAIN[p.rain]) { const [a, b] = RAIN[p.rain]; out.push([1.5, c => g.rainMm[c] >= a && g.rainMm[c] <= b]); }
-    if (p.sea === 'coast') out.push([1, c => !!g.coast[c]]);
-    if (p.sea === 'inland') out.push([1, c => g.landDist?.[c] === undefined ? !g.coast[c] : !g.coast[c] && g.seaHops[c] >= 4]);
-    if (HEIGHT[p.height]) { const [a, b] = HEIGHT[p.height]; out.push([1, c => g.heightM[c] >= a && g.heightM[c] <= b]); }
-    if (p.mountains === 'near') out.push([1, c => g.mtHops[c] <= 5]);
-    if (p.mountains === 'far') out.push([1, c => g.mtHops[c] >= 9]);
-    if (p.river === 'yes') out.push([1, c => g.riverNear[c] === 1]);
-    if (p.waters === 'rough') out.push([1, c => g.coast[c] && g.coastWind[c] >= g.windHi]);
-    if (p.waters === 'calm') out.push([1, c => g.coast[c] && g.coastWind[c] <= g.windLo]);
+    if (p.climate === 'highlands') out.push(['climate', 2, c => g.heightM[c] >= 1000]);
+    else if (CLIMATE_RE[p.climate]) { const re = CLIMATE_RE[p.climate]; out.push(['climate', 2, c => re.test(g.codes[g.koppen[c]] || '')]); }
+    if (TEMP[p.temp]) { const [a, b] = TEMP[p.temp]; out.push(['temp', 1.5, c => g.tempC[c] >= a && g.tempC[c] <= b]); }
+    if (RAIN[p.rain]) { const [a, b] = RAIN[p.rain]; out.push(['rain', 1.5, c => g.rainMm[c] >= a && g.rainMm[c] <= b]); }
+    if (p.sea === 'coast') out.push(['sea', 1, c => !!g.coast[c]]);
+    if (p.sea === 'inland') out.push(['sea', 1, c => !g.coast[c] && g.seaHops[c] >= 4]);
+    if (HEIGHT[p.height]) { const [a, b] = HEIGHT[p.height]; out.push(['height', 1, c => g.heightM[c] >= a && g.heightM[c] <= b]); }
+    if (p.mountains === 'near') out.push(['mountains', 1, c => g.mtHops[c] <= 5]);
+    if (p.mountains === 'far') out.push(['mountains', 1, c => g.mtHops[c] >= 9]);
+    if (p.river === 'yes') out.push(['river', 1, c => g.riverNear[c] === 1]);
+    if (p.waters === 'rough') out.push(['waters', 1, c => g.coast[c] && g.coastWind[c] >= g.windHi]);
+    if (p.waters === 'calm') out.push(['waters', 1, c => g.coast[c] && g.coastWind[c] <= g.windLo]);
+    if (p.currents === 'strong') out.push(['currents', 1, c => g.coast[c] && g.coastCur[c] >= g.curHi]);
+    if (p.currents === 'weak') out.push(['currents', 1, c => g.coast[c] && g.coastCur[c] <= g.curLo]);
+    if (p.fertility === 'high') out.push(['fertility', 1.5, c => g.people[c] >= g.fertHi]);
+    if (p.fertility === 'low') out.push(['fertility', 1, c => g.people[c] > 0 && g.people[c] <= g.fertLo]);
+    if (p.ore && g.ores?.[p.ore]) { const N = oreNear(p.ore); out.push(['ore', 2, c => N[c] === 1]); }
     return out;
 }
-/** A kingdom's score per cell (null: no wishes). */
+/** Within ~120 km of one of a material's richest deposits (its best few per cent). */
+function oreNear(id) {
+    const g = G;
+    g.oreNear ??= {};
+    if (!g.oreNear[id]) {
+        const o = g.ores[id], vals = [];
+        for (let c = 0; c < g.n; c++) if (o[c] > 0 && g.land[c]) vals.push(o[c]);
+        vals.sort((a, b) => b - a);
+        const thr = Math.max(100, vals[Math.floor(vals.length * 0.03)] ?? 255);
+        const M = new Uint8Array(g.n), { GW, GH } = g;
+        for (let c = 0; c < g.n; c++) {
+            if (!(o[c] >= thr)) continue;
+            const y = (c / GW) | 0, x = c - y * GW;
+            for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; M[yy * GW + ((x + dx + GW) % GW)] = 1; }
+        }
+        g.oreNear[id] = M;
+    }
+    return g.oreNear[id];
+}
+/** A kingdom's wishes per cell: S, the weight of its preferences met; R, where every one of its conditions holds (null:
+ *  none); `none` when it has no wishes at all. */
 function scoreOf(p) {
     const g = G;
     if (!g.scores) { g.scores = new Map(); hopsFields(); }
     const key = JSON.stringify(p ?? '');
     if (!g.scores.has(key)) {
-        const W = wishes(p);
-        if (!W.length) g.scores.set(key, null);
-        else {
-            const S = new Float32Array(g.n);
-            for (let c = 0; c < g.n; c++) { if (!g.land[c] || g.ice[c]) continue; let v = 0; for (const [w, f] of W) if (f(c)) v += w; S[c] = v; }
-            g.scores.set(key, S);
+        const W = wishes(p), req = (typeof p === 'object' && p?.req) || {};
+        const pref = W.filter(([k]) => !req[k]), cond = W.filter(([k]) => req[k]);
+        const S = new Float32Array(g.n), R = cond.length ? new Uint8Array(g.n) : null;
+        for (let c = 0; c < g.n; c++) {
+            if (!g.land[c] || g.ice[c]) continue;
+            let v = 0; for (const [, w, f] of pref) if (f(c)) v += w; S[c] = v;
+            if (R) { let ok = 1; for (const [, , f] of cond) if (!f(c)) { ok = 0; break; } R[c] = ok; }
         }
+        g.scores.set(key, W.length ? { S, R, nPref: pref.length } : null);
     }
     return g.scores.get(key);
 }
+const nearOf = (p) => (p && typeof p === 'object' && p.near !== undefined && p.near !== '' ? +p.near : -1);
+const nearReq = (p) => !!(p && typeof p === 'object' && p.req?.near);
 /** Hops to the nearest high mountain (a peak over 2000 m), to the sea; and a big river within a cell. */
 function hopsFields() {
     const g = G, { GW, GH } = g;
@@ -378,6 +407,26 @@ function hopsFields() {
     }
     ws.sort((a, b) => a - b);
     g.windLo = ws[Math.floor(ws.length / 3)] ?? 0; g.windHi = ws[Math.floor(2 * ws.length / 3)] ?? 99;
+    // (the current off each coast, and how fertile each place is — strong and weak the top and bottom thirds, fertile the
+    // best quarter of the land that feeds anyone)
+    g.coastCur = new Float32Array(g.n);
+    const cs = [];
+    for (let c = 0; c < g.n; c++) {
+        if (!g.coast[c]) continue;
+        const y = (c / GW) | 0, x = c - y * GW;
+        let m = 0;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+            const d = yy * GW + ((x + dx + GW) % GW);
+            if (!g.land[d] && !g.lake[d]) m = Math.max(m, Math.hypot(g.curU[d], g.curV[d]));
+        }
+        g.coastCur[c] = m; cs.push(m);
+    }
+    cs.sort((a, b) => a - b);
+    g.curLo = cs[Math.floor(cs.length / 3)] ?? 0; g.curHi = cs[Math.floor(2 * cs.length / 3)] ?? 99;
+    const ps = []; for (let c = 0; c < g.n; c++) if (g.land[c] && g.people[c] > 0) ps.push(g.people[c]);
+    ps.sort((a, b) => a - b);
+    g.fertLo = ps[Math.floor(ps.length / 4)] ?? 0; g.fertHi = ps[Math.floor(3 * ps.length / 4)] ?? 1e9;
     g.riverNear = new Uint8Array(g.n);
     for (let c = 0; c < g.n; c++) {
         if (!g.land[c]) continue;
@@ -396,24 +445,35 @@ function seedCapitals(K, prefs = []) {
     if (!cands.length) return [];
     let landArea = 0; for (let c = 0; c < g.n; c++) if (g.food[c] > 0) landArea += g.area[c];
     const D0 = Math.sqrt(landArea / K), out = new Array(K).fill(-1), dmin = new Float32Array(g.n).fill(Infinity);
-    // (the kingdoms with wishes first, the most particular first, each on the best site for them; then the rest, spread among them)
-    const nW = (k) => wishes(prefs[k]).reduce((t, [w]) => t + w, 0);
+    // (the kingdoms with wishes first, the most particular first — one that wants to be near another after it — each on the
+    // best site for it; then the rest, spread among them)
+    const nW = (k) => wishes(prefs[k]).reduce((t, [, w]) => t + w, 0) + (nearOf(prefs[k]) >= 0 ? -100 : 0);
     const order = [...Array(K).keys()].sort((a, b) => nW(b) - nW(a));
+    const Dnear = 0.9 * D0; g.D0 = D0; g.unmet = [];
     let placed = 0;
     for (const k of order) {
         let list = cands;
-        const S = scoreOf(prefs[k]);
-        if (S) {
-            // (the sites meeting the most of its wishes — or, where no good site does, any land of some size that does better)
-            let best = 0; for (const c of cands) if (S[c] > best) best = S[c];
-            let l = cands.filter(c => S[c] >= best);
-            let top = best; for (let c = 0; c < g.n; c++) if (S[c] > top && g.compArea[g.comp[c]] >= 20000) top = S[c];
-            if (top > best || l.length < 5) { const l2 = []; for (let c = 0; c < g.n; c++) if (S[c] >= top && g.compArea[g.comp[c]] >= 20000) l2.push(c); if (l2.length) l = l2; }
+        const W = scoreOf(prefs[k]), j = nearOf(prefs[k]);
+        // (its conditions: only where they all hold — on a good site, else on any land of some size; else noted, unmet)
+        if (W?.R) {
+            let l = cands.filter(c => W.R[c]);
+            if (l.length < 3) { l = []; for (let c = 0; c < g.n; c++) if (W.R[c] && g.compArea[g.comp[c]] >= 20000) l.push(c); }
+            if (l.length) list = l; else g.unmet.push(k);
+        }
+        // (near another kingdom: within a kingdom's breadth of its capital — a condition, or a preference)
+        if (j >= 0 && j < K && out[j] >= 0) {
+            const l = list.filter(c => angKm(c, out[j]) <= Dnear);
+            if (l.length) list = l; else if (nearReq(prefs[k])) g.unmet.push(k);
+        }
+        // (its preferences: the sites meeting the most of them)
+        if (W && W.nPref) {
+            let best = 0; for (const c of list) if (W.S[c] > best) best = W.S[c];
+            const l = list.filter(c => W.S[c] >= best);
             if (l.length) list = l;
         }
         let pick = -1, pv = -1;
         for (const c of list) {
-            const v = (g.site[c] + 0.01) ** 0.25 * (placed ? 1 - Math.exp(-((dmin[c] / D0) ** 2)) : 1);
+            const v = (g.site[c] + 0.01) ** 0.25 * (placed ? 1 - Math.exp(-((dmin[c] / (j >= 0 ? 0.5 * D0 : D0)) ** 2)) : 1);
             if (v > pv) { pv = v; pick = c; }
         }
         if (pick < 0) continue;
@@ -449,9 +509,11 @@ function grow(K, prefs = []) {
         // (each capital moves to the best site near its kingdom's centre of food)
         const bestV = new Float64Array(K), bestC = caps.slice();
         // (a kingdom whose capital stands in its climate keeps it there)
-        const keep = caps.map((c, k) => { const S = scoreOf(prefs[k]); return S ? { S, at: S[c] } : null; });
+        // (a capital moves only where its conditions still hold, its preferences are as well met, and the kingdom it wants
+        // to be near is still near)
+        const keep = caps.map((c, k) => { const W = scoreOf(prefs[k]), j = nearOf(prefs[k]); return { W, at: W ? W.S[c] : 0, R: W?.R && W.R[c] ? W.R : null, j: j >= 0 && j < K && angKm(c, caps[j]) <= 0.9 * g.D0 ? j : -1 }; });
         for (let c = 0; c < g.n; c++) {
-            const k = owner[c]; if (k < 0 || !(g.site[c] > 0) || g.comp[c] !== g.comp[caps[k]] || (keep[k] && keep[k].S[c] < keep[k].at)) continue;
+            const k = owner[c]; if (k < 0 || !(g.site[c] > 0) || g.comp[c] !== g.comp[caps[k]] || (keep[k].W && keep[k].W.S[c] < keep[k].at) || (keep[k].R && !keep[k].R[c]) || (keep[k].j >= 0 && angKm(c, caps[keep[k].j]) > 0.9 * g.D0)) continue;
             const l = Math.hypot(cx[3 * k], cx[3 * k + 1], cx[3 * k + 2]) || 1;
             const dot = (g.xyz[3 * c] * cx[3 * k] + g.xyz[3 * c + 1] * cx[3 * k + 1] + g.xyz[3 * c + 2] * cx[3 * k + 2]) / l;
             const dk = R_KM * Math.acos(Math.max(-1, Math.min(1, dot))), Dk = 0.35 * Math.sqrt(A[k]) + 50;
@@ -469,7 +531,7 @@ function grow(K, prefs = []) {
 }
 
 // ── the cities: the capitals, then the best sites in each kingdom by its food, kept apart ──
-function placeCities(caps, owner, N, mins = [], prefs = []) {
+function placeCities(caps, owner, N, mins = [], prefs = [], ports = []) {
     const g = G, K = caps.length, F = new Float64Array(K), A = new Float64Array(K);
     for (let c = 0; c < g.n; c++) { const k = owner[c]; if (k >= 0) { F[k] += g.food[c]; if (g.food[c] > 0) A[k] += g.area[c]; } }
     const extra = Math.max(0, N - K), total = F.reduce((s, v) => s + v, 0) || 1;
@@ -498,7 +560,7 @@ function placeCities(caps, owner, N, mins = [], prefs = []) {
     for (let c = 0; c < g.n; c++) { const k = owner[c]; if (k >= 0 && g.site[c] > 0) byKingdom[k].push(c); }
     for (let k = 0; k < K; k++) {
         if (!counts[k]) continue;
-        const list = byKingdom[k], S = scoreOf(prefs[k]), top = S ? list.reduce((m, c) => Math.max(m, S[c]), 1e-6) : 1;
+        const list = byKingdom[k], S = scoreOf(prefs[k])?.S ?? null, top = S ? list.reduce((m, c) => Math.max(m, S[c]), 1e-6) : 1;
         const base = new Float32Array(list.length);
         list.forEach((c, i) => { base[i] = g.site[c] ** 0.6 * (S ? 0.6 + 0.8 * S[c] / top : 1) * (edge[c] <= 1 ? 0.35 : edge[c] <= 3 ? 0.7 : 1); });
         const D = Math.max(80, 0.6 * Math.sqrt(A[k] / (counts[k] + 1))), dmin = new Float32Array(list.length).fill(Infinity);
@@ -506,8 +568,10 @@ function placeCities(caps, owner, N, mins = [], prefs = []) {
         list.forEach((c, i) => { for (const t of cities) { const d = near(c, t); if (d < dmin[i]) dmin[i] = d; } });
         for (let got = 0; got < counts[k]; got++) {
             let pick = -1, pv = 0;
+            // (the first towns on the coast, as many as the kingdom's towns described with a port)
+            const coastOnly = got < (ports[k] || 0);
             for (let i = 0; i < list.length; i++) {
-                if (dmin[i] < 45) continue;
+                if (dmin[i] < 45 || (coastOnly && !g.coast[list[i]])) continue;
                 const v = base[i] * (1 - Math.exp(-((dmin[i] / D) ** 2)));
                 if (v > pv) { pv = v; pick = i; }
             }
@@ -641,10 +705,10 @@ function finishRealm(cities, owner, K, extra = {}) {
     };
 }
 
-function autoRealm(K, N, prefs = [], mins = []) {
+function autoRealm(K, N, prefs = [], mins = [], ports = []) {
     const { caps, owner } = grow(Math.max(1, K), prefs);
-    const cities = placeCities(caps, owner, Math.max(caps.length, N), mins, prefs);
-    return finishRealm(cities, owner, caps.length);
+    const cities = placeCities(caps, owner, Math.max(caps.length, N), mins, prefs, ports);
+    return finishRealm(cities, owner, caps.length, { unmet: G.unmet || [] });
 }
 
 /** The realm from cities placed by hand (`list`: [{u, v, capital}]): the kingdoms grown from their capitals, the rest

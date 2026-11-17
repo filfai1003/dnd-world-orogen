@@ -8,6 +8,7 @@
 
 import { farmPlace, harvestsAt, hasHarvests, Staple, STAPLES, CROPS } from '../../v2/js/farming/farming.js';
 import { gatherGround, gatherAt, livingPlace } from '../../v2/js/farming/living.js';
+import { materialGrids, MATERIALS } from '../dnd/composer.js';
 import { KOPPEN_CLASSES } from '../../v2/js/climate/koppen.js';
 import { farmOptions } from '../../v2/js/evolution/farming-view.js';
 
@@ -91,7 +92,19 @@ export function realmGrid(fin) {
         }
     }
 
-    return { GW, GH, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
+    // ── the materials (D&D fork): each one's richness per cell, 0…255 — the best deposit in it ──
+    const ores = {}, MG = materialGrids(fin);
+    if (MG) for (const m of MATERIALS) {
+        const v = MG.grids.get(m.id)?.raw; if (!v) continue;
+        const o = new Uint8Array(n);
+        for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+            const y0 = Math.floor(y / GH * MG.h), y1 = Math.max(y0 + 1, Math.floor((y + 1) / GH * MG.h)), x0 = Math.floor(x / GW * MG.w), x1 = Math.max(x0 + 1, Math.floor((x + 1) / GW * MG.w));
+            let best = 0; for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) best = Math.max(best, v[yy * MG.w + xx]);
+            o[y * GW + x] = Math.round(255 * best);
+        }
+        ores[m.id] = o;
+    }
+    return { GW, GH, ores, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
 }
 const KOPPEN_ID_EF = KOPPEN_CLASSES.findIndex(k => k.code === 'EF');
 /** The Köppen codes by index (the worker reads the letters). */

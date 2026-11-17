@@ -397,6 +397,8 @@ function applyCode(code) {
     generate(params.seed, params.toggledIndices);
 }
 loadBtn.addEventListener('click', () => applyCode(seedInput.value));
+// (D&D fork: the land's latitude limit changed — the same world built again at once, kept within it)
+$('sMaxLat')?.addEventListener('change', () => { if (currentCode && !building) applyCode(currentCode); });
 seedInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCode(seedInput.value); });
 
 // ── the Inspect list: the world's past, per region ──

@@ -1599,6 +1599,10 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-k { border-top: 1px solid var(--ui-white-10); padding: 6px 0; }
 .realm-k-head { display: flex; align-items: center; gap: 6px; }
 .realm-k-head .realm-name { font-weight: 600; }
+.realm-color { width: 22px; height: 22px; padding: 0; border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); background: none; cursor: pointer; flex: none; }
+.realm-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.realm-color::-webkit-color-swatch { border: none; border-radius: 5px; }
+.realm-clim { flex: none; max-width: 112px; height: 24px; min-height: 0; width: auto; font: 400 11px/1.2 var(--font-ui); color: var(--body); background: var(--bg); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); padding: 2px 4px; }
 .realm-fold { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; width: 18px; padding: 0; flex: none; }
 .realm-fold:hover { color: var(--ink); }
 .realm-build { margin-top: var(--space-1); }
@@ -1621,7 +1625,7 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-cap, .realm-del { background: none; border: none; color: var(--ui-muted); cursor: pointer; font-size: 13px; padding: 0 2px; min-width: 18px; }
 .realm-cap.on { color: var(--gold-ink); }
 .realm-del:hover { color: var(--accent); }
-@media (max-width: 768px) { .realm-cap, .realm-del, .realm-fold { min-width: 44px; min-height: 44px; } .realm-btn { min-height: 44px; } }
+@media (max-width: 768px) { .realm-cap, .realm-del, .realm-fold, .realm-color, .realm-clim { min-width: 44px; min-height: 44px; } .realm-btn { min-height: 44px; } }
 
 /* D&D fork — the map composer's bar (js/dnd/composer.js), the boxes beside the sliders and the Politica panel (js/dnd/panels.js) */
 .dnd-hidden { display: none !important; }

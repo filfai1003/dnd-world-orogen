@@ -20,7 +20,7 @@ self.onmessage = ({ data: msg }) => {
         if (msg.cmd === 'init') { G = prepare(msg.grid); self.postMessage({ type: 'ready' }); return; }
         if (!G) throw new Error('no world');
         const t0 = performance.now();
-        const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N) : fixedRealm(msg.cities);
+        const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || []) : fixedRealm(msg.cities);
         res.ms = Math.round(performance.now() - t0);
         self.postMessage({ type: 'realm', id: msg.id, ...res }, [res.owner.buffer]);
     } catch (err) {
@@ -237,14 +237,49 @@ function search(sources, mode, maxCost, port = null, onSettle = null) {
 const REACH_DAYS = 120, WILD_DAYS = 25, WILD_PEOPLE = 0.05;
 
 function partition(capitals, bias) {
-    search(capitals.map((c, k) => [c, Math.max(0, bias[k] - Math.min(...bias)), k]), 'reach', REACH_DAYS);
+    // (D&D fork: no limit — all the land goes to the kingdom it is fewest days from, however far: no wild, no gaps)
+    search(capitals.map((c, k) => [c, Math.max(0, bias[k] - Math.min(...bias)), k]), 'reach', Infinity);
     const owner = new Int16Array(G.n).fill(-1);
-    // (the land within reach, but not the near-empty land far from any capital — deserts, tundra: the wild)
-    for (let c = 0; c < G.n; c++) if (G.land[c] && !G.ice[c] && G.lab[c] >= 0 && !(G.people[c] < WILD_PEOPLE && G.dist[c] > WILD_DAYS)) owner[c] = G.lab[c];
+    for (let c = 0; c < G.n; c++) if (G.land[c] && G.lab[c] >= 0) owner[c] = G.lab[c];
+    return claimAll(owner);
+}
+
+/** Every piece of land some kingdom's (D&D fork: no wild, no unclaimed island): the land beyond every capital's reach goes to
+ *  the kingdom nearest it, spreading out over land and sea alike. */
+function claimAll(owner) {
+    const g = G, { GW, GH } = g, lab = new Int16Array(g.n).fill(-1), queue = new Int32Array(g.n);
+    let qh = 0, qt = 0;
+    for (let c = 0; c < g.n; c++) if (owner[c] >= 0) { lab[c] = owner[c]; queue[qt++] = c; }
+    if (!qt) return owner;
+    while (qh < qt) {
+        const c = queue[qh++], y = (c / GW) | 0, x = c - y * GW;
+        for (const [dx, dy] of DIRS) {
+            const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+            const d = yy * GW + ((x + dx + GW) % GW);
+            if (lab[d] < 0) { lab[d] = lab[c]; queue[qt++] = d; }
+        }
+    }
+    for (let c = 0; c < g.n; c++) if (g.land[c] && owner[c] < 0) owner[c] = lab[c];
     return owner;
 }
 
-function seedCapitals(K) {
+// ── the climate a kingdom's people prefer (D&D fork): its capital stands in it, and stays there as the kingdom grows ──
+const PREFS = { tropical: /^A/, desert: /^BW/, steppe: /^BS/, mediterranean: /^Cs/, temperate: /^C[fw]/, continental: /^D.[ab]$/, taiga: /^D.[cd]$/, tundra: /^ET$/ };
+function maskOf(p) {
+    const g = G;
+    if (!g.masks) g.masks = new Map();
+    if (!g.masks.has(p)) {
+        const M = new Uint8Array(g.n), re = PREFS[p];
+        for (let c = 0; c < g.n; c++) {
+            if (!g.land[c] || g.ice[c]) continue;
+            M[c] = p === 'highlands' ? +(g.heightM[c] >= 1000) : re ? +re.test(g.codes[g.koppen[c]] || '') : 1;
+        }
+        g.masks.set(p, M);
+    }
+    return g.masks.get(p);
+}
+
+function seedCapitals(K, prefs = []) {
     const g = G, MIN_KM2 = 150000;
     let cands = [];
     for (let c = 0; c < g.n; c++) if (g.site[c] > 0 && g.compArea[g.comp[c]] >= MIN_KM2) cands.push(c);
@@ -252,29 +287,40 @@ function seedCapitals(K) {
     if (cands.length < K * 20) { cands = []; for (let c = 0; c < g.n; c++) if (g.site[c] > 0) cands.push(c); }
     if (!cands.length) return [];
     let landArea = 0; for (let c = 0; c < g.n; c++) if (g.food[c] > 0) landArea += g.area[c];
-    const D0 = Math.sqrt(landArea / K), out = [];
-    let best = cands[0];
-    for (const c of cands) if (g.site[c] > g.site[best]) best = c;
-    out.push(best);
-    const dmin = new Float32Array(cands.length).fill(Infinity);
-    while (out.length < K) {
-        const last = out[out.length - 1];
-        let pick = -1, pv = 0;
-        for (let i = 0; i < cands.length; i++) {
-            const c = cands[i], d = angKm(c, last);
-            if (d < dmin[i]) dmin[i] = d;
-            const v = g.site[c] ** 0.25 * (1 - Math.exp(-((dmin[i] / D0) ** 2)));
+    const D0 = Math.sqrt(landArea / K), out = new Array(K).fill(-1), dmin = new Float32Array(g.n).fill(Infinity);
+    // (the kingdoms with a climate first, each on the best site of its climate; then the rest, spread among them)
+    const order = [...Array(K).keys()].sort((a, b) => (prefs[b] ? 1 : 0) - (prefs[a] ? 1 : 0));
+    let placed = 0;
+    for (const k of order) {
+        let list = cands;
+        if (prefs[k]) {
+            const M = maskOf(prefs[k]);
+            let l = cands.filter(c => M[c]);
+            // (a climate with no good sites — the tundra, a small desert: any land of it, on a landmass of some size)
+            if (l.length < 5) { l = []; for (let c = 0; c < g.n; c++) if (M[c] && g.compArea[g.comp[c]] >= 20000) l.push(c); }
+            if (l.length) list = l;
+        }
+        let pick = -1, pv = -1;
+        for (const c of list) {
+            const v = (g.site[c] + 0.01) ** 0.25 * (placed ? 1 - Math.exp(-((dmin[c] / D0) ** 2)) : 1);
             if (v > pv) { pv = v; pick = c; }
         }
-        if (pick < 0) break;
-        out.push(pick);
+        if (pick < 0) continue;
+        out[k] = pick; placed++;
+        for (let c = 0; c < g.n; c++) if (g.land[c]) { const d = angKm(c, pick); if (d < dmin[c]) dmin[c] = d; }
+    }
+    // (a kingdom with nowhere to stand: the best site left)
+    for (let k = 0; k < K; k++) if (out[k] < 0) {
+        let pick = cands[0], pv = -1;
+        for (const c of cands) { const v = (dmin[c] === Infinity ? 1 : dmin[c]) * g.site[c]; if (v > pv && !out.includes(c)) { pv = v; pick = c; } }
+        out[k] = pick;
     }
     return out;
 }
 
-function grow(K) {
+function grow(K, prefs = []) {
     const g = G;
-    let caps = seedCapitals(K);
+    let caps = seedCapitals(K, prefs);
     K = caps.length;
     const bias = new Array(K).fill(0);
     let owner = null;
@@ -290,8 +336,10 @@ function grow(K) {
         const total = F.reduce((s, v) => s + v, 0), T = total / K;
         // (each capital moves to the best site near its kingdom's centre of food)
         const bestV = new Float64Array(K), bestC = caps.slice();
+        // (a kingdom whose capital stands in its climate keeps it there)
+        const keep = caps.map((c, k) => (prefs[k] && maskOf(prefs[k])[c] ? maskOf(prefs[k]) : null));
         for (let c = 0; c < g.n; c++) {
-            const k = owner[c]; if (k < 0 || !(g.site[c] > 0) || g.comp[c] !== g.comp[caps[k]]) continue;
+            const k = owner[c]; if (k < 0 || !(g.site[c] > 0) || g.comp[c] !== g.comp[caps[k]] || (keep[k] && !keep[k][c])) continue;
             const l = Math.hypot(cx[3 * k], cx[3 * k + 1], cx[3 * k + 2]) || 1;
             const dot = (g.xyz[3 * c] * cx[3 * k] + g.xyz[3 * c + 1] * cx[3 * k + 1] + g.xyz[3 * c + 2] * cx[3 * k + 2]) / l;
             const dk = R_KM * Math.acos(Math.max(-1, Math.min(1, dot))), Dk = 0.35 * Math.sqrt(A[k]) + 50;
@@ -456,8 +504,8 @@ function finishRealm(cities, owner, K, extra = {}) {
     };
 }
 
-function autoRealm(K, N) {
-    const { caps, owner } = grow(Math.max(1, K));
+function autoRealm(K, N, prefs = []) {
+    const { caps, owner } = grow(Math.max(1, K), prefs);
     const cities = placeCities(caps, owner, Math.max(caps.length, N));
     return finishRealm(cities, owner, caps.length);
 }

@@ -7,11 +7,19 @@ import { colorMap, rollShift } from '../../v2/js/evolution/export.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-const fmt = (n) => Math.round(n).toLocaleString('it-IT');
+const fmt = (n) => Math.round(n).toLocaleString('en-GB');
 
 export const KINGDOM_RGB = [[181, 82, 59], [59, 111, 181], [78, 154, 74], [193, 154, 46], [122, 79, 160], [46, 154, 150], [181, 115, 154], [138, 106, 59],
     [90, 122, 46], [181, 138, 90], [59, 79, 138], [154, 46, 79], [106, 154, 181], [160, 160, 59], [96, 96, 96], [196, 122, 46]];
-const kcol = (k, a = 1) => { const c = KINGDOM_RGB[k % KINGDOM_RGB.length]; return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
+// (each kingdom's colour: the one chosen for it, or the palette's)
+let CHOSEN = [];
+const hexRgb = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const krgb = (k) => (/^#[0-9a-f]{6}$/i.test(CHOSEN[k] ?? '') ? hexRgb(CHOSEN[k]) : KINGDOM_RGB[k % KINGDOM_RGB.length]);
+const khex = (k) => '#' + krgb(k).map(v => v.toString(16).padStart(2, '0')).join('');
+const kcol = (k, a = 1) => { const c = krgb(k); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
+/** The climates a kingdom's people can prefer (realm-worker.js PREFS): its capital stands in it. */
+const CLIMATES = [['', 'Any climate'], ['tropical', 'Tropical'], ['desert', 'Desert'], ['steppe', 'Steppe'], ['mediterranean', 'Mediterranean'],
+    ['temperate', 'Temperate'], ['continental', 'Continental'], ['taiga', 'Taiga'], ['tundra', 'Tundra'], ['highlands', 'Highlands']];
 
 const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
 const STAPLE_IT = ['Nothing', 'Paddy grain (rice)', 'Cool-climate grain (wheat, barley, rye)', 'Warm-climate grain (maize, millet, sorghum)', 'Roots and tubers', 'Livestock (milk, meat, wool)', 'Fish', 'Game and wild fruit'];
@@ -23,8 +31,9 @@ export class Realm {
     constructor({ pv, onChange, getCode }) {
         this.pv = pv; this.onChange = onChange; this.getCode = getCode;
         this.world = null; this.data = null; this.version = 0; this.busy = false; this.ready = false; this.reqId = 0;
-        this.names = { kingdoms: [], cities: [] };
-        this.show = { fills: true, borders: true, routes: true, names: true };
+        this.names = { kingdoms: [], cities: [], colors: [], climates: [] };
+        // (the kingdoms only coloured: never a border line)
+        this.show = { fills: true, borders: false, routes: true, names: true };
         this.editing = false; this.drag = null;
         // (on or off over any base map: the composer's Politica switch — composer.js draws it on screen)
         this.enabled = true; this.screenPos = []; this.labelBoxes = [];
@@ -46,7 +55,7 @@ export class Realm {
         k.addEventListener('input', sync); n.addEventListener('input', sync); sync();
         $('realmBuild').addEventListener('click', () => this.auto());
         $('realmReset').addEventListener('click', () => { this.forget(); this.auto(); });
-        for (const [id, key] of [['chkRealmFills', 'fills'], ['chkRealmBorders', 'borders'], ['chkRealmRoutes', 'routes'], ['chkRealmNames', 'names']]) {
+        for (const [id, key] of [['chkRealmRoutes', 'routes'], ['chkRealmNames', 'names']]) {
             $(id).checked = this.show[key];
             $(id).addEventListener('change', (e) => { this.show[key] = e.target.checked; this.changed(false); });
         }
@@ -57,7 +66,11 @@ export class Realm {
             const t = e.target;
             if (t.dataset.kname !== undefined) { this.names.kingdoms[+t.dataset.kname] = t.value; this.changed(false); this.save(); }
             if (t.dataset.cname !== undefined) { this.names.cities[+t.dataset.cname] = t.value; this.changed(false); this.save(); }
+            if (t.dataset.kcol !== undefined) { this.setColor(+t.dataset.kcol, t.value); this.save(); this.renderList(); }
+            // (a climate chosen: the kingdoms placed again, each in its own)
+            if (t.dataset.kclim !== undefined) { this.names.climates[+t.dataset.kclim] = t.value; this.save(); this.auto(); }
         });
+        list.addEventListener('input', (e) => { if (e.target.dataset.kcol !== undefined) this.setColor(+e.target.dataset.kcol, e.target.value); });
         list.addEventListener('click', (e) => {
             const f = e.target.closest('button[data-fold]');
             if (f) { const k = +f.dataset.fold; if (this.openK.has(k)) this.openK.delete(k); else this.openK.add(k); this.renderList(); return; }
@@ -114,6 +127,15 @@ export class Realm {
         input.focus(); input.select();
     }
 
+    setColor(k, hex) { this.names.colors[k] = hex; CHOSEN = this.names.colors; this.fillFor = null; this.changed(false); }
+    /** The kingdoms' own choices (name, colour, climate), as many as there are kingdoms. */
+    fitNames(K) {
+        const n = this.names;
+        n.colors = Array.from({ length: K }, (_, k) => n.colors?.[k] || '');
+        n.climates = Array.from({ length: K }, (_, k) => n.climates?.[k] || '');
+        n.kingdoms = Array.from({ length: K }, (_, k) => n.kingdoms?.[k] || `Kingdom ${k + 1}`);
+        CHOSEN = n.colors; this.fillFor = null;
+    }
     status(text) { const el = $('realmStatus'); if (el) { el.textContent = text || ''; el.hidden = !text; } }
     changed(recount = true) { this.version++; this.onChange(); if (recount) this.renderList(); }
 
@@ -139,8 +161,11 @@ export class Realm {
     }
     auto() {
         if (!this.world?.fin) return;
-        this.names = { kingdoms: [], cities: [] };
-        this.request({ cmd: 'auto', K: +$('sRealmK').value, N: +$('sRealmN').value });
+        // (the kingdoms keep their names, colours and climates; the cities are placed anew)
+        const K = +$('sRealmK').value;
+        this.names.cities = [];
+        this.fitNames(K);
+        this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.climates });
     }
     /** The realm again from the cities as they stand (moved, added, removed, a capital changed). */
     fixed() {
@@ -159,7 +184,7 @@ export class Realm {
         if (m.type === 'error') { console.error(m.message); this.status(`Error: ${m.message.split('\n')[0]}`); return; }
         this.data = m; this.ready = true;
         // (names: a kingdom by its index, a city by its place in the list — kept as they were where they still exist)
-        this.names.kingdoms = Array.from({ length: m.K }, (_, k) => this.names.kingdoms[k] || `Kingdom ${k + 1}`);
+        this.fitNames(m.K);
         this.names.cities = m.cities.map((c, i) => this.names.cities[i] || (c.capital ? `Capital ${this.romanOf(c.kingdom)}` : `City ${i + 1}`));
         this.status(`${m.K} kingdoms, ${m.cities.length} cities, ${m.routes.length} links · ${(m.ms / 1000).toFixed(1)} s`);
         this.drawCache = null;
@@ -196,9 +221,9 @@ export class Realm {
             const links = (i) => d.routes.filter(r => r.a === i || r.b === i).map(r => { const o = r.a === i ? r.b : r.a; const by = r.modes.some(m => m === 2) ? 'by sea' : r.modes.some(m => m === 1) ? 'by river' : 'on foot'; return `${esc(this.names.cities[o] ?? '')} ${r.days.toFixed(0)} d ${by}`; }).join(' · ');
             const open = this.openK.has(k);
             return `<div class="realm-k${open ? ' open' : ''}">
-                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><i class="realm-swatch" style="background:${kcol(k)}"></i><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"><span class="realm-meta">${K.cities} ${K.cities === 1 ? 'city' : 'cities'}</span></div>
+                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"><select class="realm-clim" data-kclim="${k}" title="The climate its people prefer: its capital stands in it" aria-label="Preferred climate">${CLIMATES.map(([v, l]) => `<option value="${v}"${(this.names.climates[k] || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
                 ${open ? `<div class="realm-facts">
-                    <div><b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Cities</b> ${K.cities} (ports ${K.ports})</div>
+                    <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
                     <div><b>How it eats</b> ${lives || '—'}</div>
                     <div><b>Staple foods</b> ${staples || '—'}</div>
@@ -316,8 +341,8 @@ export class Realm {
             const cx = cv.getContext('2d'), im = cx.createImageData(GW, GH), px = im.data;
             for (let c = 0; c < GW * GH; c++) {
                 const k = d.owner[c]; if (k < 0) continue;
-                const col = KINGDOM_RGB[k % KINGDOM_RGB.length];
-                px[4 * c] = col[0]; px[4 * c + 1] = col[1]; px[4 * c + 2] = col[2]; px[4 * c + 3] = 115;
+                const col = krgb(k);
+                px[4 * c] = col[0]; px[4 * c + 1] = col[1]; px[4 * c + 2] = col[2]; px[4 * c + 3] = 135;
             }
             cx.putImageData(im, 0, 0);
             this.fillCanvas = cv; this.fillFor = d;
@@ -556,8 +581,8 @@ export class Realm {
         const W = rctx.W, H = W >> 1, shift = rollShift(W, rctx.look.centerLon);
         const canvas = new OffscreenCanvas(W, H), ctx = canvas.getContext('2d');
         if (id !== 'dndOverlay') { const base = colorMap(rctx.fin, W, rctx.look); ctx.putImageData(new ImageData(base.data, W, H), 0, 0); }
-        const o = { dndPolitical: { fills: true, borders: true, routes: true, names: true }, dndPlayers: { fills: false, borders: false, routes: true, names: true },
-            dndBlank: { fills: false, borders: false, routes: true, names: false }, dndOverlay: { fills: true, borders: true, routes: true, names: true } }[id];
+        const o = { dndPolitical: { fills: true, borders: false, routes: true, names: true }, dndPlayers: { fills: false, borders: false, routes: true, names: true },
+            dndBlank: { fills: false, borders: false, routes: true, names: false }, dndOverlay: { fills: true, borders: false, routes: true, names: true } }[id];
         const keep = this.show; this.show = { ...this.show, fills: o.fills };
         this.paint(ctx, W, o, shift);
         this.show = keep;

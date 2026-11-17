@@ -28,7 +28,7 @@ import { state } from './state.js';
 import { store, sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay, tutorial } from './page-chrome.js';
 import { Realm } from './realm/realm.js';
 import { Composer, ownLayers } from './dnd/composer.js';
-import { sliderBoxes, rightPanel, trimView } from './dnd/panels.js';
+import { sliderBoxes, dockLayout, trimView } from './dnd/panels.js';
 
 setDelaunator(Delaunator);
 
@@ -43,6 +43,8 @@ mountLayerBar({ without: ['heightmap'], comes: 'Comes a few seconds after the pl
 // (the Inspect list: the world's past, per region)
 const inspectEl = $('debugLayer');
 
+// (D&D fork: the view options always open above the map — globe or map, projection, centre, grid, rivers)
+try { localStorage.setItem('orogen.view-strip-open', '1'); } catch { /* (where the browser allows) */ }
 let realm = null, composer = null;          // (D&D fork: set just below, once the view exists)
 const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location.search).get('gpu') !== '0', paletteKey: 'dnd.generate.palette', ownLayers,
     band: { below: document.getElementById('info'), gap: 24 },
@@ -58,7 +60,7 @@ trimView(pv);
 queueMicrotask(() => {
     composer = new Composer({ pv, realm, world: () => world, onChange: () => { dirty = true; } });
     sliderBoxes();
-    rightPanel(pv);
+    dockLayout(pv, composer);
     if (!IS_TOUCH) { $('viewMode').value = 'map'; $('viewMode').dispatchEvent(new Event('change')); }
 });
 if (IS_TOUCH) $('info').textContent = 'Drag to rotate · Pinch to zoom · Use edit button to reshape';

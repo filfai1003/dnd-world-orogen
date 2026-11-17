@@ -1686,3 +1686,45 @@ body.edits-pending #hoverInfo { bottom: 112px; }
     .dnd-pick, .dnd-num, .dnd-pop-row button { min-height: 44px; }
     .dnd-bar { gap: 4px; padding: 4px; }
 }
+
+/* D&D fork — the dock on the right: a rail of icons and the panel each opens (js/dnd/composer.js) */
+.dnd-title { font: italic 400 16px/1 var(--font-text); color: var(--muted); margin-right: auto; }
+.dnd-dock {
+    position: absolute; top: calc(var(--nav-h) + 72px); right: 16px; z-index: 25;   /* (an open panel over the legend's card) */
+    display: flex; align-items: flex-start; gap: var(--space-2);
+}
+.dnd-rail {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px;
+    background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(12px);
+    border: var(--line-hair) solid var(--rule); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+}
+.dnd-rail-btn {
+    position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    background: none; border: var(--line-hair) solid transparent; border-radius: var(--radius-sm); color: var(--muted); cursor: pointer; padding: 0;
+}
+.dnd-rail-btn:hover { color: var(--ink); background: var(--ui-white-04); }
+.dnd-rail-btn.on { color: var(--accent); }
+.dnd-rail-btn.open { border-color: var(--rule); background: var(--surface); }
+.dnd-rail-btn[data-count]:not([data-count=""])::after {
+    content: attr(data-count); position: absolute; top: 3px; right: 3px; min-width: 14px; height: 14px; border-radius: 7px;
+    background: var(--accent); color: var(--surface); font: 600 9px/14px var(--font-ui); text-align: center;
+}
+.dnd-rail-sep { width: 26px; border-top: var(--line-hair) solid var(--rule); margin: 2px 0; }
+.dnd-fly {
+    width: 230px; max-height: calc(100vh - var(--nav-h) - 100px); overflow-y: auto;
+    background: color-mix(in srgb, var(--bg) 96%, transparent); backdrop-filter: blur(12px);
+    border: var(--line-hair) solid var(--rule); border-radius: var(--radius-xl); box-shadow: var(--shadow-card);
+    padding: var(--space-4);
+}
+.dnd-fly.wide { width: 320px; }
+.dnd-fly-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+.dnd-fly-head h3 { font: 600 20px/1.1 var(--font-display); margin: 0; }
+.dnd-fly-x { background: none; border: none; color: var(--muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 6px; }
+.dnd-choice { display: flex; flex-direction: column; gap: 6px; font: 400 14px/1.3 var(--font-ui); color: var(--ink); }
+.dnd-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.dnd-hint { color: var(--muted); font-size: 12px; }
+.dnd-show { margin-bottom: var(--space-2); font: 400 14px/1.3 var(--font-ui); }
+.dnd-dock.in-sheet { position: static; flex-direction: column-reverse; align-items: stretch; margin-bottom: var(--space-3); }
+.dnd-dock.in-sheet .dnd-rail { flex-direction: row; flex-wrap: wrap; justify-content: center; box-shadow: none; }
+.dnd-dock.in-sheet .dnd-rail-sep { width: 0; height: 26px; border-top: none; border-left: var(--line-hair) solid var(--rule); }
+.dnd-dock.in-sheet .dnd-fly { width: auto; max-height: none; box-shadow: none; }

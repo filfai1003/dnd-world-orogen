@@ -117,7 +117,7 @@ export class Composer {
         Object.assign(this.screen.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', pointerEvents: 'none' });
         ($('mapCanvas') ?? $('canvas')).after(this.screen);
         this.screenKey = ''; this.geoPos = [];
-        realm.onEnable = (on) => { $('dndPolitics').checked = on; this.setPolitics(on); };
+        realm.onEnable = (on) => this.setPolitics(on);
         this.mountBar();
         this.wireRotate();
         this.applyBase();
@@ -126,61 +126,138 @@ export class Composer {
     changed() { this.version++; this.onChange(); this.legend(); }
     key() { return `${this.flow}|${[...this.geo].join(',')}|${this.base === 'temp' ? this.tempSeason : 'year'}|${this.version}`; }
 
-    // ── the bar over the map: the base, its own choice, and the overlays ──
+    // ── the dock on the right: a rail of icons (the bases, the overlays, the export) and the panel each opens ──
     mountBar() {
-        const row = document.querySelector('#layerBar .layer-row');
-        const bar = document.createElement('div');
-        bar.id = 'dndBar'; bar.className = 'dnd-bar';
-        bar.innerHTML = `
-            <div class="map-tabs" id="dndBase" role="group" aria-label="Mappa di base">
-                <button type="button" class="map-tab active" data-base="terrain" title="La mappa disegnata: rilievi, fiumi e laghi, in stile antico">Terreno</button>
-                <button type="button" class="map-tab" data-base="satellite" title="Il pianeta visto dallo spazio">Satellite</button>
-                <button type="button" class="map-tab" data-base="temp" title="Quanto fa caldo: la temperatura media dell'anno, di gennaio o di luglio; il mare tutto blu">Temperatura</button>
-                <button type="button" class="map-tab" data-base="fert" title="Dove la terra dà da mangiare: terre coltivabili, aridità, stagione di crescita">Fertilità</button>
+        const I = {
+            terrain: '<path d="M3 19 9 9l4 6 3-4 5 8z"/>',
+            satellite: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>',
+            temp: '<path d="M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0z"/><path d="M12 10v6"/>',
+            fert: '<path d="M12 20v-8"/><path d="M12 12C12 7 8 5 4 5c0 5 3 7 8 7z"/><path d="M12 14c0-4 3-6 8-6 0 4-3 6-8 6z"/>',
+            politics: '<path d="M4 18 5 7l4 4 3-6 3 6 4-4 1 11z"/>',
+            flow: '<path d="M3 9h11a3 3 0 1 0-3-3"/><path d="M3 14h15a3 3 0 1 1-3 3"/>',
+            geo: '<path d="M7 4h10l4 6-9 10L3 10z"/><path d="M3 10h18M9 4l3 16 3-16"/>',
+            export: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
+        };
+        const icon = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>`;
+        const btn = (k, label, extra = '') => `<button type="button" class="dnd-rail-btn" data-rail="${k}" title="${label}" aria-label="${label}"${extra}>${icon(k)}</button>`;
+        const dock = document.createElement('div');
+        dock.id = 'dndDock'; dock.className = 'dnd-dock';
+        dock.innerHTML = `
+            <div id="dndFly" class="dnd-fly" hidden>
+                <section class="dnd-fly-part" data-part="temp" hidden>
+                    <div class="dnd-fly-head"><h3>Temperatura</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-choice" id="dndTempSeason">
+                        <label><input type="radio" name="dndSeason" value="year" checked>Media dell'anno</label>
+                        <label><input type="radio" name="dndSeason" value="jan">Gennaio</label>
+                        <label><input type="radio" name="dndSeason" value="jul">Luglio</label>
+                    </div>
+                </section>
+                <section class="dnd-fly-part" data-part="fert" hidden>
+                    <div class="dnd-fly-head"><h3>Fertilità</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-choice" id="dndFertMode">
+                        <label><input type="radio" name="dndFert" value="farmLand" checked>Terre coltivabili</label>
+                        <label><input type="radio" name="dndFert" value="aridity">Aridità</label>
+                        <label><input type="radio" name="dndFert" value="growing">Stagione di crescita</label>
+                    </div>
+                </section>
+                <section class="dnd-fly-part" data-part="flow" hidden>
+                    <div class="dnd-fly-head"><h3>Venti e correnti</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div class="dnd-choice" id="dndFlow">
+                        <label><input type="radio" name="dndFlowR" value="none" checked>Niente</label>
+                        <label><input type="radio" name="dndFlowR" value="wind">Venti <span class="dnd-hint">per le rotte volanti</span></label>
+                        <label><input type="radio" name="dndFlowR" value="currents">Correnti marine</label>
+                    </div>
+                </section>
+                <section class="dnd-fly-part" data-part="geo" hidden>
+                    <div class="dnd-fly-head"><h3>Geologia</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+                    <div id="dndGeoPop" class="dnd-choice">
+                        ${MATERIALS.map(m => `<label class="dnd-mat"><input type="checkbox" value="${m.id}"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</label>`).join('')}
+                        <div class="dnd-pop-row"><button type="button" data-geo="all">Tutti</button><button type="button" data-geo="none">Nessuno</button></div>
+                    </div>
+                </section>
+                <section class="dnd-fly-part" data-part="politics" hidden></section>
             </div>
-            <select id="dndTempSeason" class="dnd-pick" aria-label="Stagione" hidden><option value="year">Anno</option><option value="jan">Gennaio</option><option value="jul">Luglio</option></select>
-            <select id="dndFertMode" class="dnd-pick" aria-label="Fertilità" hidden><option value="farmLand">Terre coltivabili</option><option value="aridity">Aridità</option><option value="growing">Stagione di crescita</option></select>
-            <span class="dnd-sep" aria-hidden="true"></span>
-            <label class="toggle-label" title="Regni, confini, città e sentieri"><input type="checkbox" id="dndPolitics" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Politica</label>
-            <select id="dndFlow" class="dnd-pick" aria-label="Venti o correnti" title="I venti (per le rotte volanti) o le correnti marine: uno alla volta">
-                <option value="none">Niente venti né correnti</option><option value="wind">Venti</option><option value="currents">Correnti marine</option>
-            </select>
-            <div class="dnd-geo">
-                <button type="button" id="dndGeoBtn" class="dnd-pick" aria-expanded="false" title="Le zone dei materiali e i giacimenti più ricchi">Geologia</button>
-                <div id="dndGeoPop" class="dnd-pop" hidden>
-                    ${MATERIALS.map(m => `<label class="dnd-mat"><input type="checkbox" value="${m.id}"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</label>`).join('')}
-                    <div class="dnd-pop-row"><button type="button" data-geo="all">Tutti</button><button type="button" data-geo="none">Nessuno</button></div>
-                </div>
-            </div>`;
-        row.appendChild(bar);
-        bar.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => { this.base = b.dataset.base; this.applyBase(); }));
-        $('dndTempSeason').addEventListener('change', e => { this.tempSeason = e.target.value; this.applyBase(); });
-        $('dndFertMode').addEventListener('change', e => { this.fertMode = e.target.value; this.applyBase(); });
+            <nav id="dndRail" class="dnd-rail" aria-label="Mappa">
+                ${btn('terrain', 'Terreno: la mappa disegnata, in stile antico')}
+                ${btn('satellite', 'Satellite: il pianeta visto dallo spazio')}
+                ${btn('temp', 'Temperatura: media dell’anno, di gennaio o di luglio')}
+                ${btn('fert', 'Fertilità: terre coltivabili, aridità, stagione di crescita')}
+                <span class="dnd-rail-sep" aria-hidden="true"></span>
+                ${btn('politics', 'Politica: regni, città e sentieri')}
+                ${btn('flow', 'Venti o correnti marine')}
+                ${btn('geo', 'Geologia: zone e giacimenti dei materiali')}
+                <span class="dnd-rail-sep" aria-hidden="true"></span>
+                ${btn('export', 'Esporta la mappa come la vedi')}
+            </nav>`;
+        document.body.appendChild(dock);
+        // (the Politica panel: the realm's controls, moved into the dock's panel)
+        const pol = dock.querySelector('[data-part="politics"]');
+        pol.innerHTML = `<div class="dnd-fly-head"><h3>Politica</h3><button type="button" class="dnd-fly-x" aria-label="Chiudi">×</button></div>
+            <label class="toggle-label dnd-show"><input type="checkbox" id="dndPolitics" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Mostra sulla mappa</label>`;
+        const section = $('realmSection');
+        if (section) pol.appendChild(section);
+        $('dndRight')?.remove();
+        this.open = null;
+        dock.querySelectorAll('.dnd-fly-x').forEach(x => x.addEventListener('click', () => this.openPart(null)));
+        dock.querySelectorAll('[data-rail]').forEach(b => b.addEventListener('click', () => {
+            const k = b.dataset.rail;
+            if (['terrain', 'satellite', 'temp', 'fert'].includes(k)) {
+                const same = this.base === k;
+                this.base = k; this.applyBase();
+                // (a base with a choice of its own opens it; a second click closes it)
+                this.openPart((k === 'temp' || k === 'fert') && !(same && this.open === k) ? k : null);
+                return;
+            }
+            if (k === 'export') { $('exportBtn').click(); return; }
+            this.openPart(this.open === k ? null : k);
+        }));
+        dock.querySelector('#dndTempSeason').addEventListener('change', e => { this.tempSeason = e.target.value; this.applyBase(); });
+        dock.querySelector('#dndFertMode').addEventListener('change', e => { this.fertMode = e.target.value; this.applyBase(); });
         $('dndPolitics').addEventListener('change', e => this.setPolitics(e.target.checked));
-        $('dndFlow').addEventListener('change', e => { this.flow = e.target.value; this.changed(); });
-        const pop = $('dndGeoPop'), btn = $('dndGeoBtn');
-        btn.addEventListener('click', () => { pop.hidden = !pop.hidden; btn.setAttribute('aria-expanded', String(!pop.hidden)); });
-        addEventListener('pointerdown', (e) => { if (!pop.hidden && !e.target.closest('.dnd-geo')) { pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
+        dock.querySelector('#dndFlow').addEventListener('change', e => { this.flow = e.target.value; this.changed(); this.railState(); });
+        const pop = $('dndGeoPop');
         pop.addEventListener('change', (e) => { const id = e.target.value; if (e.target.checked) this.geo.add(id); else this.geo.delete(id); this.geoChanged(); });
         pop.addEventListener('click', (e) => {
             const b = e.target.closest('[data-geo]'); if (!b) return;
             for (const box of pop.querySelectorAll('input')) { box.checked = b.dataset.geo === 'all'; if (box.checked) this.geo.add(box.value); else this.geo.delete(box.value); }
             this.geoChanged();
         });
+        addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.open && !this.realm.editing) this.openPart(null); });
         // (the legend of the overlays: under the base's own)
         const lg = document.createElement('div'); lg.id = 'dndLegend'; lg.className = 'dnd-legend';
         $('legendCard').appendChild(lg);
+        this.railState();
     }
-    geoChanged() { $('dndGeoBtn').textContent = this.geo.size ? `Geologia (${this.geo.size})` : 'Geologia'; this.zoneKey = ''; this.changed(); }
-    setPolitics(on) { this.realm.enabled = on; if (!on && this.realm.editing) this.realm.setEditing(false); this.realm.version++; this.changed(); }
+    /** Open one of the dock's panels (or none). */
+    openPart(k) {
+        this.open = k;
+        const fly = $('dndFly');
+        fly.hidden = !k;
+        fly.querySelectorAll('.dnd-fly-part').forEach(p => { p.hidden = p.dataset.part !== k; });
+        fly.classList.toggle('wide', k === 'politics');
+        this.railState();
+        this.onLayout?.();
+    }
+    /** The rail's icons lit: the base chosen, the overlays on, the panel open. */
+    railState() {
+        const on = { terrain: this.base === 'terrain', satellite: this.base === 'satellite', temp: this.base === 'temp', fert: this.base === 'fert',
+            politics: this.realm.enabled, flow: this.flow !== 'none', geo: this.geo.size > 0 };
+        document.querySelectorAll('#dndRail [data-rail]').forEach(b => {
+            const k = b.dataset.rail;
+            b.classList.toggle('on', !!on[k]); b.classList.toggle('open', this.open === k);
+            b.setAttribute('aria-pressed', String(!!on[k]));
+        });
+        const g = document.querySelector('#dndRail [data-rail="geo"]');
+        if (g) g.dataset.count = this.geo.size ? String(this.geo.size) : '';
+    }
+    geoChanged() { this.zoneKey = ''; this.changed(); this.railState(); }
+    setPolitics(on) { this.realm.enabled = on; if ($('dndPolitics')) $('dndPolitics').checked = on; if (!on && this.realm.editing) this.realm.setEditing(false); this.realm.version++; this.changed(); this.railState?.(); }
     applyBase() {
-        for (const b of document.querySelectorAll('#dndBase [data-base]')) { const on = b.dataset.base === this.base; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
-        $('dndTempSeason').hidden = this.base !== 'temp';
-        $('dndFertMode').hidden = this.base !== 'fert';
         const layer = { terrain: 'terrain', satellite: 'satellite', temp: TEMP_LAYER, fert: this.fertMode }[this.base];
         this.pv.view.season = this.base === 'temp' ? this.tempSeason : 'year';
         this.pv.setLayer(layer);
         this.changed();
+        if ($('dndRail')) this.railState();
     }
 
     // ── the overlays on the planet's picture: the winds' or currents' arrows, the materials' zones ──

@@ -38,33 +38,23 @@ export function sliderBoxes() {
     }
 }
 
-/** The Politica panel on the right: folded or open, the map kept clear of it on a wide screen; on a phone, in the sheet. */
-export function rightPanel(pv) {
-    const aside = $('dndRight'), btn = $('dndRightToggle'), narrow = matchMedia('(max-width: 768px)');
+/** The dock on the right (composer.js: the rail and its panels): the map kept clear of it on a wide screen; on a phone,
+ *  at the top of the bottom sheet. */
+export function dockLayout(pv, composer) {
+    const dock = $('dndDock'), narrow = matchMedia('(max-width: 768px)');
     const layout = () => {
-        // (the map composer's bar: over the map on a wide screen, at the top of the bottom sheet on a phone)
-        const bar = $('dndBar');
-        if (bar) {
-            if (narrow.matches) { if (!bar.classList.contains('in-sheet-bar')) { ($('viewStripSlot') ?? $('sidebarContent').firstChild).after(bar); bar.classList.add('in-sheet-bar'); } }
-            else if (bar.classList.contains('in-sheet-bar')) { document.querySelector('#layerBar .layer-row')?.appendChild(bar); bar.classList.remove('in-sheet-bar'); }
-        }
         if (narrow.matches) {
-            // (a phone: the panel goes into the bottom sheet, under the world's controls)
-            if (aside.parentElement !== $('sidebarContent')) $('sidebarContent').appendChild(aside);
-            aside.classList.add('in-sheet'); window.__openRight = 0;
+            if (dock.parentElement !== $('sidebarContent')) $('sidebarContent').prepend(dock);
+            dock.classList.add('in-sheet'); window.__openRight = 0;
         } else {
-            if (aside.parentElement !== document.body) document.body.appendChild(aside);
-            aside.classList.remove('in-sheet');
-            window.__openRight = aside.classList.contains('collapsed') ? 0 : Math.round(aside.getBoundingClientRect().width) + 24;
+            if (dock.parentElement !== document.body) document.body.appendChild(dock);
+            dock.classList.remove('in-sheet');
+            window.__openRight = Math.round(dock.getBoundingClientRect().width) + 24;
         }
         if (pv.globe) pv.globe._dirty = true;
         pv.onChange?.('view');
     };
-    btn.addEventListener('click', () => {
-        const c = aside.classList.toggle('collapsed');
-        btn.innerHTML = c ? '&#x00AB;' : '&#x00BB;'; btn.setAttribute('aria-expanded', String(!c));
-        layout();
-    });
+    composer.onLayout = layout;
     narrow.addEventListener('change', layout);
     addEventListener('resize', layout);
     layout();
@@ -74,7 +64,7 @@ export function rightPanel(pv) {
 export function trimView(pv) {
     const hide = (el) => el?.classList.add('dnd-hidden');
     for (const id of ['chkRotate', 'chkSpace', 'chkShade', 'chkClouds', 'chkRegime']) hide($(id)?.closest('label'));
-    for (const id of ['paletteGroup', 'riverDensityGroup', 'mapTabs', 'subBar', 'mobileViewSwitch']) hide($(id));
+    for (const id of ['paletteGroup', 'riverDensityGroup', 'mapTabs', 'subBar', 'mobileViewSwitch', 'gridSpacingGroup', 'viewFold']) hide($(id));
     const v = pv.view;
     v.palette = 'antique'; v.shaded = true; v.clouds = false; v.byRegime = true; v.water = true;
     if ($('palette')) $('palette').value = 'antique';

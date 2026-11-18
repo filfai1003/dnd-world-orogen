@@ -725,6 +725,41 @@ function trimToSize(owner, K, prefs) {
         for (let c = 0; c < g.n; c++) if (drop[c] && lab[c] >= 0) owner[c] = lab[c];
     }
 }
+/** Two kingdoms meant to share a frontier and still apart, with no more than ~300 km of another's land between them: the
+ *  shortest way across (over land) given half to each, a few cells wide — they meet on it. */
+function joinBorders(owner, K, prefs) {
+    const g = G, { GW, GH } = g, MAXH = Math.max(3, Math.round(300 / (Math.PI * R_KM / GH)));
+    for (let pass = 0; pass < 2; pass++) {
+        const FR = frontiers(owner, K);
+        for (let k = 0; k < K; k++) for (const j of bordersOf(prefs, k)) {
+            if (j <= k || j >= K || FR[k * K + j]) continue;
+            // (from k's land outward, over land not j's, until j's is reached)
+            const from = new Int32Array(g.n).fill(-2), hop = new Uint16Array(g.n), q = new Int32Array(g.n); let qh = 0, qt = 0, hit = -1;
+            for (let c = 0; c < g.n; c++) if (owner[c] === k) { from[c] = -1; q[qt++] = c; }
+            while (qh < qt && hit < 0) {
+                const c = q[qh++]; if (hop[c] >= MAXH) continue;
+                const y = (c / GW) | 0, x = c - y * GW;
+                for (const [dx, dy] of DIRS) {
+                    const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                    const d = yy * GW + ((x + dx + GW) % GW);
+                    if (from[d] !== -2 || !g.land[d]) continue;
+                    from[d] = c; hop[d] = hop[c] + 1;
+                    if (owner[d] === j) { hit = d; break; }
+                    q[qt++] = d;
+                }
+            }
+            if (hit < 0) continue;
+            const path = []; for (let c = from[hit]; c >= 0 && owner[c] !== k; c = from[c]) path.push(c);
+            path.reverse();
+            path.forEach((c, i) => {
+                const to = i < path.length / 2 ? k : j, y = (c / GW) | 0, x = c - y * GW;
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (g.land[d] && owner[d] !== k && owner[d] !== j && !g.holdCell?.[d]) owner[d] = to; }
+                owner[c] = to;
+            });
+            FR[k * K + j] = FR[j * K + k] = 1;
+        }
+    }
+}
 /** Kingdoms that must not touch, pulled apart: a strip (~3 cells) along their frontier given to a third kingdom that
  *  reaches it — a march between them. */
 function keepApart(owner, K, prefs) {
@@ -1151,6 +1186,7 @@ function grow(K, prefs = []) {
         for (let k = 0; k < K; k++) for (const b of relOf(prefs, k, 'apart')) if (b < K && b > k && FR[k * K + b]) { bias[k] = Math.min(20, bias[k] + 3); bias[b] = Math.min(20, bias[b] + 3); }
     }
     trimToSize(owner, K, prefs);
+    joinBorders(owner, K, prefs);
     { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c]; g.lastArea = A; }
     // (a size asked as a condition and missed by far: unmet)
     if (g.lastArea) { const At = g.lastArea.reduce((t, v) => t + v, 0) / K; for (let k = 0; k < K; k++) { const f = SIZE[prefs[k]?.size]; if (f && prefs[k]?.req?.size) { const r = g.lastArea[k] / (f * At); if ((r < 0.6 || r > 1.7) && !g.unmet.includes(k)) g.unmet.push(k); } } }

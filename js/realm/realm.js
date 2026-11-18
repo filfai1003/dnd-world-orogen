@@ -32,12 +32,14 @@ const WISHES = [
     ['waters', 'Seas', [['', 'Any'], ['calm', 'Calm seas'], ['rough', 'Rough, stormy seas']]],
     ['currents', 'Currents', [['', 'Any'], ['strong', 'Strong sea currents'], ['weak', 'Weak sea currents']]],
     ['fertility', 'Fertility', [['', 'Any'], ['high', 'Very fertile land'], ['low', 'Poor land']]],
+    ['hold', 'Holds the sources', [['', 'None'], ['gems', 'Gems'], ['iron', 'Iron'], ['copper', 'Copper'], ['tin', 'Tin'], ['silver', 'Silver'], ['gold', 'Gold'], ['salt', 'Salt'], ['coal', 'Coal']]],
     ['ore', 'Riches', [['', 'Any'], ['gems', 'Main gem mines'], ['iron', 'Main iron mines'], ['copper', 'Main copper mines'], ['tin', 'Main tin mines'], ['silver', 'Main silver mines'], ['gold', 'Main gold mines'], ['salt', 'Main salt'], ['coal', 'Main coal']]],
 ];
 /** A kingdom's wishes in a line — its conditions marked "must". */
+const HOLD_NAMES = { gems: 'Gems', iron: 'Iron', copper: 'Copper', tin: 'Tin', silver: 'Silver', gold: 'Gold', salt: 'Salt', coal: 'Coal' };
 const wishText = (p, names = []) => [...WISHES.map(([key, , opts]) => (p?.[key] ? [key, opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '')] : null)),
     p?.near !== undefined && p?.near !== '' && names[+p.near] ? ['near', `near ${names[+p.near]}`] : null]
-    .filter(Boolean).map(([key, t]) => (p.req?.[key] ? `must: ${t}` : t)).join(' · ');
+    .filter(Boolean).map(([key, t]) => (key === 'hold' ? [key, `holds the ${t.toLowerCase()} sources`] : [key, t])).map(([key, t]) => (p.req?.[key] ? `must: ${t}` : t)).join(' · ');
 
 const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
 const STAPLE_IT = ['Nothing', 'Paddy grain (rice)', 'Cool-climate grain (wheat, barley, rye)', 'Warm-climate grain (maize, millet, sorghum)', 'Roots and tubers', 'Livestock (milk, meat, wool)', 'Fish', 'Game and wild fruit'];
@@ -336,11 +338,12 @@ export class Realm {
             return `<div class="realm-k${open ? ' open' : ''}">
                 <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"></div>
                 <div class="realm-wish-sum">${esc(wishText(this.names.prefs[k], this.names.kingdoms)) || 'Anywhere'}</div>
-                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label><span></span><span class="realm-must-head" title="Ticked: a condition, which must hold. Unticked: a preference, met where it can be">Must</span>${[...WISHES, ['near', 'Near', [['', 'Any'], ...this.names.kingdoms.map((n, j) => [String(j), n]).filter(([j]) => +j !== k)]]].map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${String(this.names.prefs[k]?.[key] ?? '') === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label><input type="checkbox" class="realm-must" data-kreq="${k}" data-key="${key}" title="A condition: it must hold"${this.names.prefs[k]?.req?.[key] ? ' checked' : ''}>`).join('')}</div>
+                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label><span></span><span></span><span></span><span class="realm-must-head" title="Ticked: a condition, which must hold. Unticked: a preference, met where it can be">Must</span>${[...WISHES, ['near', 'Near', [['', 'Any'], ...this.names.kingdoms.map((n, j) => [String(j), n]).filter(([j]) => +j !== k)]]].map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${String(this.names.prefs[k]?.[key] ?? '') === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label><input type="checkbox" class="realm-must" data-kreq="${k}" data-key="${key}" title="A condition: it must hold"${this.names.prefs[k]?.req?.[key] ? ' checked' : ''}>`).join('')}</div>
                 <div class="realm-facts">
                     <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
                     <div><b>How it eats</b> ${lives || '—'}</div>
+                    ${Object.keys(K.holds || {}).length ? `<div><b>Sources held</b> ${Object.entries(K.holds).sort((a, b) => b[1] - a[1]).map(([id, v]) => `${HOLD_NAMES[id] ?? id} ${pct(v, 1)}%`).join(' · ')}</div>` : ''}
                     <div><b>Staple foods</b> ${staples || '—'}</div>
                     <div><b>Climate</b> ${climate || '—'}</div>
                     <div><b>Land</b> mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km${K.wild > 0 ? ` · barren ${pct(K.wild, K.area)}%` : ''}</div>

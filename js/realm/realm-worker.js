@@ -20,7 +20,7 @@ self.onmessage = ({ data: msg }) => {
         if (msg.cmd === 'init') { G = prepare(msg.grid); self.postMessage({ type: 'ready' }); return; }
         if (!G) throw new Error('no world');
         const t0 = performance.now();
-        if (msg.cmd === 'fixed') G.adapt = adaptOf(msg.prefs);
+        if (msg.cmd === 'fixed') { G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
         const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
         res.ms = Math.round(performance.now() - t0);
         self.postMessage({ type: 'realm', id: msg.id, ...res }, [res.owner.buffer]);
@@ -279,11 +279,30 @@ const REACH_DAYS = 120, WILD_DAYS = 25, WILD_PEOPLE = 0.05;
 function partition(capitals, bias) {
     // (D&D fork: no limit — all the land goes to the kingdom it is fewest days from, however far: no wild, no gaps)
     G.useAdapt = true;                             // (the labels are kingdoms: each crosses the land as its people can)
-    search(capitals.map((c, k) => [c, Math.max(0, bias[k] - Math.min(...bias)), k]), 'reach', Infinity);
+    const lo = Math.min(...bias), sources = capitals.map((c, k) => [c, Math.max(0, bias[k] - lo), k]);
+    search(sources, 'reach', Infinity);
     G.useAdapt = false;
     const owner = new Int16Array(G.n).fill(-1);
     for (let c = 0; c < G.n; c++) if (G.land[c] && G.lab[c] >= 0) owner[c] = G.lab[c];
-    return claimAll(owner);
+    claimAll(owner);
+    // (a kingdom that holds a material's sources: each source its own, with the ground round it (~80 km) — mines held as
+    // outposts, not a road to them. As a condition, every source; as a preference, those within a kingdom's breadth of its
+    // capital — the far ones left to whoever holds the land)
+    const g = G, { GW, GH } = g;
+    (g.prefs || []).forEach((p, k) => {
+        if (!p || typeof p !== 'object' || !p.hold || k >= capitals.length) return;
+        const must = !!p.req?.hold, reach = 1.2 * (g.D0 || 3000);
+        for (const c of richCells(p.hold)) {
+            if (!must && angKm(c, capitals[k]) > reach) continue;
+            const y = (c / GW) | 0, x = c - y * GW;
+            for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                const d = yy * GW + ((x + dx + GW) % GW);
+                if (g.land[d]) owner[d] = k;
+            }
+        }
+    });
+    return owner;
 }
 
 /** Every piece of land some kingdom's (D&D fork: no wild, no unclaimed island): the land beyond every capital's reach goes to
@@ -335,6 +354,22 @@ function wishes(p) {
     if (p.fertility === 'low') out.push(['fertility', 1, c => g.people[c] > 0 && g.people[c] <= g.fertLo]);
     if (p.ore && g.ores?.[p.ore]) { const N = oreNear(p.ore); out.push(['ore', 2, c => N[c] === 1]); }
     return out;
+}
+/** A material's sources: the land cells of its richest deposits (its best few per cent, as oreNear reads them). */
+function richCells(id) {
+    const g = G;
+    g.rich ??= {};
+    if (!g.rich[id]) {
+        const o = g.ores?.[id];
+        if (!o) return (g.rich[id] = []);
+        const vals = [];
+        for (let c = 0; c < g.n; c++) if (o[c] > 0 && g.land[c] && !g.ice[c]) vals.push(o[c]);
+        vals.sort((a, b) => b - a);
+        const thr = Math.max(100, vals[Math.floor(vals.length * 0.03)] ?? 255), out = [];
+        for (let c = 0; c < g.n; c++) if (o[c] >= thr && g.land[c] && !g.ice[c]) out.push(c);
+        g.rich[id] = out;
+    }
+    return g.rich[id];
 }
 /** Within ~120 km of one of a material's richest deposits (its best few per cent). */
 function oreNear(id) {
@@ -491,7 +526,7 @@ function seedCapitals(K, prefs = []) {
 
 function grow(K, prefs = []) {
     const g = G;
-    g.adapt = adaptOf(prefs);
+    g.adapt = adaptOf(prefs); g.prefs = prefs;
     let caps = seedCapitals(K, prefs);
     K = caps.length;
     const bias = new Array(K).fill(0);
@@ -707,6 +742,17 @@ function routes(cities) {
     return out;
 }
 
+/** A kingdom's share of each material's sources (0…1), where it holds any. */
+function holdsOf(owner, k) {
+    const out = {};
+    for (const id of Object.keys(G.ores || {})) {
+        const R = richCells(id); if (!R.length) continue;
+        let n = 0; for (const c of R) if (owner[c] === k) n++;
+        if (n) out[id] = n / R.length;
+    }
+    return out;
+}
+
 // ── the whole realm ──
 function finishRealm(cities, owner, K, extra = {}) {
     const { kingdoms, cityPop } = describe(cities, owner, K);
@@ -716,7 +762,7 @@ function finishRealm(cities, owner, K, extra = {}) {
         owner, K,
         cities: cities.map((t, i) => ({ c: t.c, u: ((t.c % g.GW) + 0.5) / g.GW, v: (((t.c / g.GW) | 0) + 0.5) / g.GH, capital: !!t.capital, kingdom: t.kingdom, port: !!t.port, people: Math.round(cityPop[i]),
             river: g.riverQ[t.c] >= CROSS_Q, heightM: Math.round(g.heightM[t.c]), koppen: g.codes[g.koppen[t.c]] })),
-        kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0 })),
+        kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0, holds: holdsOf(owner, i) })),
         // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
         routes: R.map(r => ({ a: r.a, b: r.b, days: r.days, path: r.cells.map(c => [((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]), modes: r.modes,
             cur: r.cells.map(c => (g.land[c] || g.lake[c] ? null : [+g.curU[c].toFixed(3), +g.curV[c].toFixed(3)])) })),

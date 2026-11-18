@@ -63,11 +63,19 @@ export function presentWorld(present, pieceLandNow, genMesh, r_xyz, o) {
     // changes today's world, its coasts, plates and belts, not the history: a piece sunk takes its past under with it, a
     // piece raised is young land with none of its own, and the rest of the planet keeps the past it had — so a Ctrl-click
     // reshapes the place clicked, as on the old page, not every range on the planet. A planet code's edits read the same.)
-    const base = o.unedited && o.unedited.P !== P ? o.unedited : null;
+    let base = o.unedited && o.unedited.P !== P ? o.unedited : null;
     if (base && !base.land) {
         base.crustLand = cellLandNow(L, base.P, base.pieceLand);
         base.land = naturalCoast(L, base.crustLand, base.P.cellPlate);
         base.B = classifyBoundaries(L, base.P, base.land, undefined, base.crustLand);
+    }
+    // (D&D fork: where an edit raised much of today's land — a third or more of it was sea in the layout as first built,
+    // as when a world is drawn again from an all-sea one — that land would be young and flat, with no past of its own; then
+    // the past is the edited layout's: its continents with old orogenies of their own, their ranges, shields and basins)
+    if (base) {
+        let now = 0, raised = 0;
+        for (let c = 0; c < crustLand.length; c++) if (crustLand[c]) { now++; if (!base.crustLand[c]) raised++; }
+        if (now && raised / now >= 1 / 3) base = null;
     }
     const pastP = base?.P ?? P, pastB = base?.B ?? B, pastLand = base?.land ?? land, pastCrustLand = base?.crustLand ?? crustLand;
     // (G3b: the inner seams — where two land pieces of one plate meet — replayed with the past, or sagged)

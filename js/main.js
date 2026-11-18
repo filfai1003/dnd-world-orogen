@@ -375,6 +375,7 @@ $('editToggle')?.addEventListener('click', () => { state.editMode = !state.editM
 // ── the sliders: their values, the stale build button, Reapply, the climate ──
 const sliderIds = ['sN', 'sP', 'sCn', 'sJ', 'sNs', 'sCsv', 'sLc'], PLATE_SLIDERS = ['sP', 'sCn', 'sCsv', 'sLc'], SCULPT = ['sTw', 'sS', 'sGl', 'sHEr', 'sTEr', 'sRs'];
 let lastGenValues = {};
+const climateKept = { sTmp: $('sTmp').value, sPrc: $('sPrc').value };   // (the climate sliders' last values, for undo)
 let worldReplay = false;                 // (D&D fork: a world made again by undo or redo — not a new entry)
 function snapshotSliders() { for (const id of sliderIds) lastGenValues[id] = $(id).value; lastGenValues.flat = !!$('chkFlat')?.checked; }
 /** D&D fork: a flat world shown flat — the map, equirectangular, centred so its seam runs along the map's edges, not to be
@@ -416,7 +417,16 @@ for (const s of ['sN', 'sP', 'sCn', 'sJ', 'sNs', 'sCsv', 'sLc', ...SCULPT, 'sTmp
         else if (s !== 'sTmp' && s !== 'sPrc') checkStale();
     });
     // (the climate: the finish again, with the ground it has — on release, not every step of a drag)
-    if (s === 'sTmp' || s === 'sPrc') slider.addEventListener('change', () => { if (world) { updatePlanetCode(false); finish(world); } });
+    if (s === 'sTmp' || s === 'sPrc') slider.addEventListener('change', () => {
+        if (!world) return;
+        // (undo: the climate's sliders back as they were, and the world finished again)
+        const before = climateKept[s], after = slider.value; climateKept[s] = after;
+        if (before !== undefined && before !== after && !undoHistory.replaying) {
+            const set = (v) => { slider.value = v; climateKept[s] = v; slider.dispatchEvent(new Event('input')); updatePlanetCode(false); finish(world); };
+            undoHistory.push({ label: s === 'sTmp' ? 'temperature' : 'rainfall', undo: () => set(before), redo: () => set(after) });
+        }
+        updatePlanetCode(false); finish(world);
+    });
 }
 redrawFoldedSliders();
 reapplyBtn.addEventListener('click', () => {
@@ -471,6 +481,7 @@ function setSlidersFrom(params) {
         sTw: params.terrainWarp, sS: params.smoothing, sGl: params.glacialErosion, sHEr: params.hydraulicErosion, sTEr: params.thermalErosion, sRs: params.ridgeSharpening, sTmp: params.greenhouse, sPrc: params.precipitationOffset };
     for (const [id, val] of Object.entries(map)) { const el = $(id); if (+val > +el.max) el.max = String(val); el.value = val; el.dispatchEvent(new Event('input')); }
     if ($('chkFlat')) $('chkFlat').checked = !!params.flat;
+    climateKept.sTmp = $('sTmp').value; climateKept.sPrc = $('sPrc').value;
 }
 /** A planet code, with the fork's suffix for plates and continents past the code's range (~p<plates>c<continents>). */
 function decodeCode(code) {

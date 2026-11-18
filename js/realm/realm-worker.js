@@ -609,7 +609,7 @@ function wishes(p) {
     if (p.island === 'island') out.push(['island', 1.5, c => g.compArea[g.comp[c]] < 0.25 * g.compMax]);
     if (p.island === 'mainland') out.push(['island', 1.5, c => g.compArea[g.comp[c]] >= 0.25 * g.compMax]);
     if (p.island === 'peninsula') { const P = peninsulaField(); out.push(['island', 1.5, c => P[c] === 1]); }
-    if (Array.isArray(p.marks) && p.marks.length) { landmarks(); for (const k of p.marks) if (g.markNear[k]) { const M = g.markNear[k]; out.push(['marks', 1.5, c => M[c] === 1, k]); } }
+    // (the notable places are no longer drawn nor wished for: the owner's choice — landmarks() kept for later)
     if (p.sea === 'coast') out.push(['sea', 1, c => !!g.coast[c]]);
     if (p.sea === 'inland') out.push(['sea', 1, c => !g.coast[c] && g.seaHops[c] >= 4]);
     if (HEIGHT[p.height]) { const [a, b] = HEIGHT[p.height]; out.push(['height', 1, c => g.heightM[c] >= a && g.heightM[c] <= b]); }
@@ -1652,7 +1652,7 @@ function finishRealm(cities, owner, K, extra = {}) {
         kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0, holds: holdsOf(owner, i), ...sheetOf(owner, K, i, cities) })),
         // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
         routes: R.map(routeOut),
-        marks: landmarks().map(m => ({ kind: m.kind, u: ((m.c % g.GW) + 0.5) / g.GW, v: (((m.c / g.GW) | 0) + 0.5) / g.GH, size: m.size, kingdom: owner[m.c] >= 0 ? owner[m.c] : nearestOwner(owner, m.c) })),
+        marks: [],
         ...extra,
     };
 }

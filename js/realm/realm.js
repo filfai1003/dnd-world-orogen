@@ -275,7 +275,7 @@ export class Realm {
         if (!el) { el = document.createElement('div'); el.id = 'dndTrip'; el.className = 'dnd-trip'; document.body.appendChild(el); el.addEventListener('click', (e) => { if (e.target.closest('.dnd-trip-x')) this.clearTrip(); }); }
         const t = this.trip, nm = (i) => esc(this.names.cities[i] ?? '');
         const days = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} d`;
-        const parts = (o) => [['foot', 'on foot'], ['boat', 'getting a boat'], ['river', 'by river boat'], ['carry', 'carrying the boat'], ['sea', 'by sea']]
+        const parts = (o) => [['foot', 'on foot'], ['boat', 'getting a river boat'], ['river', 'by river boat'], ['carry', 'carrying the boat'], ['sea', 'by ship']]
             .filter(([k]) => o.by[k] > 0.05).map(([k, l]) => `${days(o.by[k])} ${l}`).join(' · ');
         let body;
         if (t.b === undefined) body = `<div class="dnd-trip-hint">From <b>${nm(t.a)}</b> — click a second city</div>`;
@@ -284,8 +284,8 @@ export class Realm {
             const { boat, noBoat } = t.options;
             const row = (o, cls, label) => (o ? `<div class="dnd-trip-row"><i class="dnd-trip-key ${cls}"></i><div><b>${label}: ${days(o.days)}</b><div class="dnd-trip-parts">${parts(o)}</div></div></div>` : `<div class="dnd-trip-row"><i class="dnd-trip-key ${cls}"></i><div><b>${label}</b>: no way</div></div>`);
             body = `<div class="dnd-trip-head"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b></div>
-                ${boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? row(boat, 'boat', 'With a boat') : ''}
-                ${row(noBoat, 'foot', boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? 'Without a boat' : 'On foot (a boat would not help)')}`;
+                ${boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? row(boat, 'boat', 'With a river boat') : ''}
+                ${row(noBoat, 'foot', boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? `Without a river boat${noBoat?.by.sea > 0.05 ? ' (by land and ship)' : ' (on foot)'}` : `Best way${noBoat?.by.sea > 0.05 ? ', by land and ship' : ', on foot'} (a river boat would not help)`)}`;
         }
         el.innerHTML = `<button type="button" class="dnd-trip-x" aria-label="Close">×</button>${body}`;
     }

@@ -33,10 +33,11 @@ const SEASON_IT = { year: 'yearly mean', jan: 'January', jul: 'July' };
 function tempColorAt(fin, W, season) {
     const T = finishedClimateValue('temperature', season, fin.climate, W), c = [0, 0, 0];
     return (out, o, x, y, wet, kk, k3, v, lake) => {
-        if (wet || lake) { out[o] = SEA_RGB[0]; out[o + 1] = SEA_RGB[1]; out[o + 2] = SEA_RGB[2]; return; }
+        // (opaque: the export's picture keeps the alpha — without it, a map all but black)
+        if (wet || lake) { out[o] = SEA_RGB[0]; out[o + 1] = SEA_RGB[1]; out[o + 2] = SEA_RGB[2]; out[o + 3] = 255; return; }
         tempRgb(T(x, y, false), c);
         const k = 0.62 + 0.38 * kk;
-        out[o] = Math.min(255, c[0] * k); out[o + 1] = Math.min(255, c[1] * k); out[o + 2] = Math.min(255, c[2] * k);
+        out[o] = Math.min(255, c[0] * k); out[o + 1] = Math.min(255, c[1] * k); out[o + 2] = Math.min(255, c[2] * k); out[o + 3] = 255;
     };
 }
 function tempLegend(season) {

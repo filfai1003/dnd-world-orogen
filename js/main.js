@@ -541,7 +541,7 @@ const exportPanel = initEvolutionExport({
     names: (ctx, opts) => { const c = Math.round(opts.centerLon || 0); return { start: ['orogen', ctx.seed], end: [c ? `c${Math.abs(c)}${c > 0 ? 'E' : 'W'}` : null] }; },
     about: (ctx) => ({ page: 'Generate', planet: `planet code ${ctx.seed}`, link: `https://orogen.studio/generate#${ctx.seed}` }) });
 // (D&D fork: a hook to check the realm's maps from the console — window.__dnd.map(2048, 'dndPolitical') → { kind, W, H, data })
-window.__dnd = { realm, composer, world: () => world, map: (W, id) => composer.produce({ W, fin: world.fin, look: { lut: heightLutOf(view.palette), exaggeration: pv.SHADING.exaggeration, water: view.water, riverQ: view.riverQ, byRegime: view.byRegime, centerLon: 0, shaded: true } }, { row: { id } }) };
+window.__dnd = { realm, get composer() { return composer; }, world: () => world, map: (W, id) => composer.produce({ W, fin: world.fin, look: { lut: heightLutOf(view.palette), exaggeration: pv.SHADING.exaggeration, water: view.water, riverQ: view.riverQ, byRegime: view.byRegime, centerLon: 0, shaded: true } }, { row: { id } }) };
 $('exportBtn').addEventListener('click', () => {
     if (world?.fin) { exportPanel.open(); return; }
     // (the maps come from the finished world: a few seconds after the planet)

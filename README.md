@@ -20,6 +20,7 @@ What changes from the original:
 - **Progress bar** at the bottom: the world's finish and the kingdoms, each its step of its steps, the step's name and how far it is.
 - **Routes by hand**: every city has at least one way on foot (where another city stands on its land). Ctrl + left click a city, then another: a route between them. Right click a route: take it away; right click a city: take away its routes by land. Sea routes are only directions, not roads. The edits are kept with the realm.
 - **One network**: every city is linked to the rest — no city or group of cities is cut off: groups are joined by their cheapest way, by sea when they must.
+- **Ports and shores**: a city within ~80 km of the sea has its harbour on the nearest coast (half a day to board or land); anywhere else on a shore a fishing boat can be hired (three days) — no city is cut off from the sea.
 - **River boats**: a traveller may get a boat at a navigable river (2 days), then rows downstream fast and upstream slowly (75 km a day × (1 + 0.5 × the current along)), and carries it over land between rivers (walking 2.2 times slower) until leaving it. Rivers cost nothing to cross on foot.
 - **Roads and routes**: roads, river ways and sea routes that account for winds, currents, ice and the open sea, with the current's arrows along the sea routes; times in days.
 - **Export**: saves the map exactly as composed, in the chosen projection.

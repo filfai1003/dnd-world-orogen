@@ -14,6 +14,22 @@ const WALK_KM_DAY = 30, RIVER_KM_DAY = 70, SAIL_KM_DAY = 120, LAKE_KM_DAY = 60;
 const NAV_Q = 400;           // a river this big (m³/s) carries boats
 const CROSS_Q = 150;         // a river this big must be bridged or forded
 const EMBARK_DAYS = 0.5;     // a port: boarding or landing
+const BEACH_DAYS = 3;        // boarding or landing on a shore with no port (D&D fork: no city cut off from the sea)
+/** The ports (D&D fork): each port city's cell, and the shore within ~80 km of it — a city near the sea has its harbour
+ *  on the coast nearest it. */
+function portMap(cells) {
+    const g = G, { GW, GH } = g, port = new Uint8Array(g.n);
+    for (const c of cells) {
+        port[c] = 1;
+        const y = (c / GW) | 0, x = c - y * GW;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+            const d = yy * GW + ((x + dx + GW) % GW);
+            if (g.coast[d] || g.lakeside[d]) port[d] = 1;
+        }
+    }
+    return port;
+}
 // (D&D fork: a river boat — got where a navigable river is (built, bought), then carried along: downstream the current
 // helps, upstream it holds back; on land between rivers the boat is carried, and the going is slower; left anywhere)
 const BOAT_DAYS = 2;         // getting a boat at the river
@@ -237,7 +253,8 @@ function stepCost(a, b, d, ex, ny, mode, port) {
     // (the traveller: on and off the water at ports alone)
     if (la !== lb) {
         const shore = la ? a : b;
-        if (!port[shore]) return -1;
+        // (a port: half a day; anywhere else on the shore, a fishing boat found and hired — three days)
+        if (!port[shore]) return BEACH_DAYS;
         g.stepMode = 2;
         return EMBARK_DAYS * (g.lake[la ? b : a] ? 0.6 : 1);
     }
@@ -308,8 +325,7 @@ function searchTravel(sources, maxCost, port, onSettle) {
 /** Between two cities (cells `a`, `b`): the best journey with a river boat allowed, and the best without one — each its
  *  days, how they are spent, and its way. */
 function tripOptions(a, b, ports) {
-    const g = G, port = new Uint8Array(g.n);
-    for (const c of ports) port[c] = 1;
+    const g = G, port = portMap(ports);
     const one = (noBoat) => {
         g.noBoat = noBoat;
         searchTravel([[a, 0, 0]], Infinity, port, (c) => c === b);
@@ -757,7 +773,12 @@ function describe(cities, owner, K) {
         const w = list.map(([t, i]) => (cityFood[i] ** 1.15) * (t.capital ? 2 : 1)), W = w.reduce((s, v) => s + v, 0) || 1;
         list.forEach(([t, i], j) => { cityPop[i] = 0.05 * kingdoms[k].people * w[j] / W; });
     }
-    for (const t of cities) if (G.coast[t.c] || G.lakeside[t.c]) kingdoms[t.kingdom] && (t.port = true);
+    for (const t of cities) {
+        const y = (t.c / G.GW) | 0, x = t.c - y * G.GW;
+        let near = false;
+        for (let dy = -2; dy <= 2 && !near; dy++) for (let dx = -2; dx <= 2 && !near; dx++) { const yy = y + dy; if (yy < 0 || yy >= G.GH) continue; const d = yy * G.GW + ((x + dx + G.GW) % G.GW); if (G.coast[d] || G.lakeside[d]) near = true; }
+        if (near && kingdoms[t.kingdom]) t.port = true;
+    }
     for (const t of cities) if (t.port && kingdoms[t.kingdom]) kingdoms[t.kingdom].ports++;
     return { kingdoms, cityPop, cityFood };
 }
@@ -876,8 +897,7 @@ function slimeRoads(food, weight, stepIndex) {
 }
 
 function routes(cities, pop = []) {
-    const g = G, at = new Map(cities.map((t, i) => [t.c, i])), port = new Uint8Array(g.n);
-    for (const t of cities) if (t.port) port[t.c] = 1;
+    const g = G, at = new Map(cities.map((t, i) => [t.c, i])), port = portMap(cities.filter(t => t.port).map(t => t.c));
     // (D&D fork: the roads grown first — the capitals' network, then everyone's — and travel on them made easy: the main
     // roads' ground counts for about a sixth, the others' for about half)
     g.roadF = null;
@@ -1012,8 +1032,7 @@ function routeOut(r) {
 }
 /** A route added by hand (D&D fork): the best way between two cities, on the roads as they are. */
 function linkRoute(a, b, from, to, ports) {
-    const g = G, port = new Uint8Array(g.n);
-    for (const c of ports) port[c] = 1;
+    const g = G, port = portMap(ports);
     searchTravel([[from, 0, a]], Infinity, port, (c) => c === to);
     if (!(g.dist[to] < Infinity)) return null;
     const { cells, modes } = traceTravel(to);

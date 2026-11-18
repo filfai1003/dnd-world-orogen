@@ -1753,3 +1753,7 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 body.dnd-no-degrees .gf-num { display: none; }
 .dnd-warm { color: var(--accent); font-weight: 600; }
 .dnd-cold { color: var(--logo-blue); font-weight: 600; }
+/* D&D fork: the readout under the pointer kept in the bottom-left corner, beside the panel, out of the map's middle */
+@media (min-width: 769px) {
+    #hoverInfo, body.edits-pending #hoverInfo { left: 332px; bottom: var(--space-4); transform: none; }
+}

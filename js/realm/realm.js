@@ -150,6 +150,16 @@ export class Realm {
         addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.editing) this.setEditing(false); });
         // (a name changed on the map: a double click on a city or on a kingdom)
         document.addEventListener('dblclick', (e) => this.renameAt(e), { capture: true });
+        // (Ctrl + right click on the land: a new city there — the kingdoms and routes worked out again round it)
+        document.addEventListener('pointerdown', (e) => {
+            if (e.button !== 2 || !e.ctrlKey || !this.enabled || !this.data || this.busy || !this.onPlanet(e)) return;
+            e.preventDefault(); e.stopImmediatePropagation();
+            const at = this.uvOf(e); if (!at) return;
+            this.data.cities.push({ u: at.u, v: at.v, capital: false, kingdom: -1, people: 0 });
+            this.names.cities.push(`City ${this.data.cities.length}`);
+            this.fixed();
+        }, { capture: true });
+        document.addEventListener('contextmenu', (e) => { if (e.ctrlKey && this.enabled && this.data && this.onPlanet(e)) e.preventDefault(); }, { capture: true });
         list.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input.realm-name')) e.target.blur(); });
     }
 

@@ -707,11 +707,18 @@ const SIZE = { small: 0.5, medium: 1, large: 2, vast: 3 };   // (far: capitals �
 /** A kingdom given a size and still far too big: its land farthest from its capital (by the reach's days) handed to the
  *  neighbours that reach it, until it is back near its size. */
 function trimToSize(owner, K, prefs) {
+    for (let pass = 0; pass < 4; pass++) if (!trimOnce(owner, K, prefs)) break;
+}
+/** One pass of trimToSize; true if a kingdom was trimmed. The land let go goes first to the neighbours with room to take
+ *  it (no size of their own, or under it), else to any. */
+function trimOnce(owner, K, prefs) {
     const g = G, { GW, GH } = g, A = new Float64Array(K);
     for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c];
-    const At = A.reduce((t, v) => t + v, 0) / K;
+    const At = A.reduce((t, v) => t + v, 0) / K, room = (j) => { const f = SIZE[prefs[j]?.size]; return !f || A[j] < 1.05 * f * At; };
+    let any = false;
     for (let k = 0; k < K; k++) {
         const f = SIZE[prefs[k]?.size]; if (!f || A[k] <= 1.25 * f * At) continue;
+        any = true;
         const cells = []; for (let c = 0; c < g.n; c++) if (owner[c] === k) cells.push(c);
         cells.sort((a, b) => g.dist[b] - g.dist[a]);
         let excess = A[k] - f * At;
@@ -720,16 +727,27 @@ function trimToSize(owner, K, prefs) {
         // (the neighbours grow into the dropped land from where they touch it)
         const q = new Int32Array(g.n); let qh = 0, qt = 0;
         const lab = new Int16Array(g.n).fill(-1);
-        for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && owner[c] !== k) {
-            const y = (c / GW) | 0, x = c - y * GW;
-            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (drop[d]) { lab[c] = owner[c]; q[qt++] = c; break; } }
+        for (const roomOnly of [true, false]) {
+            qh = 0; qt = 0;
+            for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && owner[c] !== k && (!roomOnly || room(owner[c]))) {
+                const y = (c / GW) | 0, x = c - y * GW;
+                for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (drop[d] && lab[d] < 0) { lab[c] = owner[c]; q[qt++] = c; break; } }
+            }
+            // (each taker takes, ring by ring, only until it is at its own size — the rest left to another, or kept)
+            while (qh < qt) {
+                const c = q[qh++], y = (c / GW) | 0, x = c - y * GW, j = lab[c];
+                for (const [dx, dy] of DIRS) {
+                    const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                    const d = yy * GW + ((x + dx + GW) % GW);
+                    if (!drop[d] || lab[d] >= 0 || cutAt(c, d)) continue;
+                    if (roomOnly && !room(j)) continue;
+                    lab[d] = j; owner[d] = j; A[j] += g.area[d]; A[k] -= g.area[d]; drop[d] = 0; q[qt++] = d;
+                }
+            }
+            lab.fill(-1);
         }
-        while (qh < qt) {
-            const c = q[qh++], y = (c / GW) | 0, x = c - y * GW;
-            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (drop[d] && lab[d] < 0) { lab[d] = lab[c]; q[qt++] = d; } }
-        }
-        for (let c = 0; c < g.n; c++) if (drop[c] && lab[c] >= 0) owner[c] = lab[c];
     }
+    return any;
 }
 /** A kingdom of an island (its people's wish): the whole of its island its own, and nothing beyond it — what it held
  *  elsewhere goes to the kingdoms round it. */
@@ -817,6 +835,44 @@ function growToSize(owner, K, prefs) {
                 owner[d] = k; A[k] += g.area[d]; A[j] -= g.area[d]; q[qt++] = d;
             }
         }
+    }
+}
+/** Kingdoms given a size, evened out along their frontiers: round after round, each land cell on a frontier passes from
+ *  the kingdom further over its size to the neighbour further under (by more than a tenth) — like heat, from the full to
+ *  the empty — until no more moves or the rounds run out. The capitals never move; an island kingdom alone stays as it is. */
+function balanceSizes(owner, K, prefs, caps) {
+    const g = G, { GW, GH } = g, A = new Float64Array(K), T = new Float64Array(K);
+    for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && g.land[c]) A[owner[c]] += g.area[c];
+    const At = A.reduce((t, v) => t + v, 0) / K;
+    let sized = false;
+    for (let k = 0; k < K; k++) { T[k] = (SIZE[prefs[k]?.size] || 0) * At; if (T[k]) sized = true; }
+    if (!sized) return;
+    const fixed = new Uint8Array(g.n); for (const c of caps) if (c >= 0) fixed[c] = 1;
+    const r = (k) => (T[k] ? A[k] / T[k] : 1);
+    const ROUNDS = Math.max(20, Math.round(1500 / (Math.PI * R_KM / GH)));
+    for (let round = 0; round < ROUNDS; round++) {
+        const moves = [];
+        for (let c = 0; c < g.n; c++) {
+            const k = owner[c]; if (k < 0 || !g.land[c] || fixed[c] || !T[k]) continue;
+            const y = (c / GW) | 0, x = c - y * GW;
+            let best = -1, br = r(k) / 1.1;
+            for (const [dx, dy] of DIRS) {
+                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                const d = yy * GW + ((x + dx + GW) % GW), j = owner[d];
+                if (j < 0 || j === k || !g.land[d] || !T[j] || cutAt(c, d)) continue;
+                if (r(j) < br) { br = r(j); best = j; }
+            }
+            if (best >= 0) moves.push(c, best);
+        }
+        if (!moves.length) break;
+        // (moved all at once, each only while its kingdoms are still apart enough: no overshoot)
+        let moved = 0;
+        for (let i = 0; i < moves.length; i += 2) {
+            const c = moves[i], j = moves[i + 1], k = owner[c];
+            if (!(r(j) < r(k) / 1.1)) continue;
+            owner[c] = j; A[k] -= g.area[c]; A[j] += g.area[c]; moved++;
+        }
+        if (!moved) break;
     }
 }
 /** Kingdoms that must not touch, pulled apart: a strip (~3 cells) along their frontier given to a third kingdom that
@@ -1248,6 +1304,7 @@ function grow(K, prefs = []) {
     keepIslands(owner, K, prefs, caps);
     growToSize(owner, K, prefs);
     trimToSize(owner, K, prefs);
+    balanceSizes(owner, K, prefs, caps);
     joinBorders(owner, K, prefs);
     { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c]; g.lastArea = A; }
     // (a size asked as a condition and missed by far: unmet)
@@ -1582,6 +1639,28 @@ function routes(cities, pop = []) {
         searchTravel([[cities[a].c, 0, a]], Infinity, port, (c) => { const b = at.get(c); if (b !== undefined && b !== a) { hit = b; return true; } return false; });
         if (hit >= 0) { const { cells, modes } = traceTravel(cities[hit].c); out.push({ a, b: hit, days: g.dist[cities[hit].c], cells, modes }); onFoot[a] = onFoot[hit] = 1; }
         g.landOnly = false;
+    }
+    // (D&D fork: the capitals of one landmass all joined by land — through any towns, but never by sea: where they are
+    // not, the nearest groups joined by the cheapest way over land, until they are)
+    {
+        const root2 = cities.map((_, i) => i), find2 = (i) => { while (root2[i] !== i) i = root2[i] = root2[root2[i]]; return i; };
+        for (const r of out) if (!r.modes.includes(2)) root2[find2(r.a)] = find2(r.b);
+        const crown = (i) => cities[i].capital || cities[i].seat;
+        for (let guard = 0; guard < cities.length; guard++) {
+            // (the groups that hold a capital, by landmass)
+            const byComp = new Map();
+            cities.forEach((t, i) => { if (!crown(i)) return; const k = g.comp[t.c]; if (!byComp.has(k)) byComp.set(k, new Set()); byComp.get(k).add(find2(i)); });
+            const split = [...byComp.values()].find(S => S.size > 1);
+            if (!split) break;
+            const groups = [...split], A = groups[0], others = new Set(groups.slice(1));
+            const from = cities.map((_, i) => i).filter(i => find2(i) === A);
+            g.landOnly = true;
+            let hit = -1;
+            searchTravel(from.map(i => [cities[i].c, 0, i]), Infinity, port, (c) => { const b = at.get(c); if (b !== undefined && others.has(find2(b))) { hit = b; return true; } return false; });
+            if (hit >= 0) { const a = g.lab[cities[hit].c], { cells, modes } = traceTravel(cities[hit].c); out.push({ a, b: hit, days: g.dist[cities[hit].c], cells, modes }); root2[find2(a)] = find2(hit); }
+            g.landOnly = false;
+            if (hit < 0) break;
+        }
     }
     // (the routes kept for the vehicles: their land cells are the roads)
     g.cityCell = new Uint8Array(g.n); for (const t of cities) g.cityCell[t.c] = 1;

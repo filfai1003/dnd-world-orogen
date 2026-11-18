@@ -4,7 +4,7 @@ A personal fork of [World Orogen](https://github.com/raguilar011095/planet_heigh
 
 What changes from the original:
 
-- **Left panel**: generation only. Generate: detail, continents, land coverage and plates with *Generate world*; Import: your heightmap and its detail with *Import*. Both: the number of kingdoms and cities with *Generate kingdoms* (each slider has a box to type its value; the other controls are hidden for now).
+- **Left panel**: generation only. Generate: detail, continents, land coverage and plates with *Generate world*; Import: your heightmap and its detail with *Import*. Both: the number of kingdoms and cities with *Generate kingdoms* (each slider has a box to type its value — for plates, continents, kingdoms and cities without a ceiling, the continents no more than the plates; plates and continents past the planet code's range are kept in a suffix, `~p<plates>c<continents>`; the other controls are hidden for now).
 - **Right side**: visualisation only, in a rail of icons; the panels it opens lie over the map without moving it.
 - **Composable map**: a base (antique Terrain, Satellite, Temperature for the year/January/July with the sea all blue, Fertility with farmland, aridity or growing season) and, stacked over it, Politics, Winds or Sea currents, and Geology material by material (likely zones and the richest deposits; Generate only).
 - **Rivers**: a level in place of the switch — Off, Low, Medium, High.

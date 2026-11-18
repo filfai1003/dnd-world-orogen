@@ -92,7 +92,8 @@ export class Realm {
     }
     /** The preset's kingdoms set (their names, colours, climates and towns' names), and the address cleared of it. */
     applyPreset(p) {
-        const K = Math.min(16, Math.max(1, p.kingdoms?.length || 1));
+        const K = Math.max(1, p.kingdoms?.length || 1);
+        if (K > +$('sRealmK').max) $('sRealmK').max = String(K);
         $('sRealmK').value = String(K); $('sRealmK').dispatchEvent(new Event('input'));
         if (p.cities) { $('sRealmN').value = String(Math.max(K, p.cities)); $('sRealmN').dispatchEvent(new Event('input')); }
         const ks = p.kingdoms.slice(0, K);

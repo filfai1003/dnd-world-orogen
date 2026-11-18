@@ -7,6 +7,7 @@ import { detailFromSlider, sliderFromDetail } from '../detail-scale.js';
 const $ = (id) => document.getElementById(id);
 
 /** How a slider's value is shown and typed: to the number in the box, and back. */
+const OPEN = new Set(['sP', 'sCn', 'sRealmK', 'sRealmN']);
 const SHOWN = {
     sN: { to: (v) => detailFromSlider(+v), from: (n) => sliderFromDetail(n), min: 5000, max: 2560000, step: 1000 },
     sLc: { to: (v) => Math.round(100 * v), from: (n) => n / 100, min: 0, max: 100, step: 1 },
@@ -19,7 +20,11 @@ export function sliderBoxes() {
         const id = s.id, k = SHOWN[id], span = $(id.replace(/^s/, 'v'));
         const num = document.createElement('input');
         num.type = 'number'; num.className = 'dnd-num';
-        num.min = String(k?.min ?? s.min); num.max = String(k?.max ?? s.max); num.step = String(k?.step ?? s.step);
+        num.min = String(k?.min ?? s.min); num.step = String(k?.step ?? s.step);
+        // (D&D fork: plates, continents, kingdoms and cities without a ceiling — the slider keeps its range and stretches
+        // to a number typed past it; the continents no more than the plates)
+        const open = OPEN.has(id);
+        if (!open) num.max = String(k?.max ?? s.max);
         num.setAttribute('aria-label', s.closest('.cg')?.querySelector('label')?.firstChild?.textContent?.trim() ?? id);
         const show = () => { const v = k ? k.to(s.value) : +s.value; num.value = String(+(+v).toFixed(2)); };
         show();
@@ -28,7 +33,10 @@ export function sliderBoxes() {
         num.addEventListener('change', () => {
             let n = +num.value;
             if (!(n === n)) { show(); return; }
-            n = Math.max(+num.min, Math.min(+num.max, n));
+            n = Math.max(+num.min, open ? n : Math.min(+num.max, n));
+            if (id === 'sCn') n = Math.min(n, +$('sP').value);
+            if (open) n = Math.round(n);
+            if (open && n > +s.max) s.max = String(n);
             s.value = String(k ? k.from(n) : n);
             s.dispatchEvent(new Event('input', { bubbles: true }));
             s.dispatchEvent(new Event('change', { bubbles: true }));

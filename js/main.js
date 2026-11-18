@@ -408,7 +408,8 @@ function toggledIndices() {
 function updatePlanetCode(flash) {
     if (!world) return;
     const v = (id) => +$(id).value;
-    currentCode = encodePlanetCode(world.seed, detailFromSlider(v('sN')), v('sJ'), v('sP'), v('sCn'), v('sNs'), v('sTw'), v('sS'), v('sGl'), v('sHEr'), v('sTEr'), v('sRs'), 0.75, v('sCsv'), v('sTmp'), v('sPrc'), v('sLc'), toggledIndices());
+    const P = v('sP'), Cn = v('sCn'), wide = P > 120 || Cn > 10;
+    currentCode = encodePlanetCode(world.seed, detailFromSlider(v('sN')), v('sJ'), Math.min(120, P), Math.min(10, Cn), v('sNs'), v('sTw'), v('sS'), v('sGl'), v('sHEr'), v('sTEr'), v('sRs'), 0.75, v('sCsv'), v('sTmp'), v('sPrc'), v('sLc'), toggledIndices()) + (wide ? `~p${P}c${Cn}` : '');
     seedInput.value = currentCode;
     loadBtn.classList.toggle('ready', false);
     history.replaceState(null, '', `${location.search}#${currentCode}`);
@@ -422,10 +423,18 @@ seedInput.addEventListener('input', () => { const val = seedInput.value.trim().t
 function setSlidersFrom(params) {
     const map = { sN: sliderFromDetail(params.N), sJ: params.jitter, sP: params.P, sCn: params.numContinents, sNs: params.roughness, sCsv: params.continentSizeVariety, sLc: params.landCoverage,
         sTw: params.terrainWarp, sS: params.smoothing, sGl: params.glacialErosion, sHEr: params.hydraulicErosion, sTEr: params.thermalErosion, sRs: params.ridgeSharpening, sTmp: params.greenhouse, sPrc: params.precipitationOffset };
-    for (const [id, val] of Object.entries(map)) { const el = $(id); el.value = val; el.dispatchEvent(new Event('input')); }
+    for (const [id, val] of Object.entries(map)) { const el = $(id); if (+val > +el.max) el.max = String(val); el.value = val; el.dispatchEvent(new Event('input')); }
+}
+/** A planet code, with the fork's suffix for plates and continents past the code's range (~p<plates>c<continents>). */
+function decodeCode(code) {
+    const [base, extra] = String(code).trim().split('~');
+    const params = decodePlanetCode(base);
+    const m = params && extra ? /^p(\d+)c(\d+)$/.exec(extra) : null;
+    if (m) { params.P = +m[1]; params.numContinents = +m[2]; }
+    return params;
 }
 function applyCode(code) {
-    const params = decodePlanetCode(code);
+    const params = decodeCode(code);
     if (!params) {
         seedInput.style.borderColor = 'var(--ui-error)'; seedError.classList.add('visible');
         setTimeout(() => { seedInput.style.borderColor = ''; }, 1500);
@@ -533,6 +542,6 @@ tutorial({ key: 'atlas-engine-tutorial-seen', firstDone: genBtn, isTouch: IS_TOU
 genBtn.addEventListener('generate-done', () => { const el = $('info'); el.classList.add('nudge'); el.addEventListener('animationend', () => el.classList.remove('nudge'), { once: true }); }, { once: true });
 
 // ── go: the planet in the link, or a new one ──
-const hashParams = location.hash.length > 1 ? decodePlanetCode(location.hash.slice(1).trim()) : null;
+const hashParams = location.hash.length > 1 ? decodeCode(decodeURIComponent(location.hash.slice(1))) : null;
 if (hashParams) { setSlidersFrom(hashParams); generate(hashParams.seed, hashParams.toggledIndices); }
 else generate(undefined, []);

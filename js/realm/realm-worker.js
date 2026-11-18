@@ -753,7 +753,7 @@ function routes(cities) {
     const g = G, at = new Map(cities.map((t, i) => [t.c, i])), port = new Uint8Array(g.n);
     for (const t of cities) if (t.port) port[t.c] = 1;
     // (1: each city's costs to its nearest neighbours by travel — directed: the winds and currents)
-    const cost = new Map(), key = (a, b) => a * 4096 + b;
+    const cost = new Map(), key = (a, b) => a * 65536 + b;
     for (let a = 0; a < cities.length; a++) {
         let found = 0;
         search([[cities[a].c, 0, a]], 'travel', ROUTE_DAYS, port, (c) => {
@@ -766,9 +766,9 @@ function routes(cities) {
     // (2: a link is kept unless going round by a third city costs about as little)
     const kept = [];
     const pairs = new Set();
-    for (const k of cost.keys()) { const a = Math.floor(k / 4096), b = k % 4096; pairs.add(a < b ? key(a, b) : key(b, a)); }
+    for (const k of cost.keys()) { const a = Math.floor(k / 65536), b = k % 65536; pairs.add(a < b ? key(a, b) : key(b, a)); }
     for (const k of pairs) {
-        const a = Math.floor(k / 4096), b = k % 4096, ab = sym(a, b);
+        const a = Math.floor(k / 65536), b = k % 65536, ab = sym(a, b);
         let redundant = false;
         for (let c = 0; c < cities.length && !redundant; c++) {
             if (c === a || c === b) continue;

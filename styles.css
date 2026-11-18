@@ -1605,6 +1605,9 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .realm-must-head { font: 600 10px/1 var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .realm-must { margin: 0; accent-color: var(--accent); cursor: pointer; }
 .realm-wishes .realm-clim { max-width: none; width: 100%; }
+.realm-borders { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.realm-wishes .realm-border { display: inline-flex; align-items: center; gap: 3px; color: var(--ink); cursor: pointer; }
+.realm-border input { margin: 0; accent-color: var(--accent); }
 .realm-color { width: 22px; height: 22px; padding: 0; border: var(--line-hair) solid var(--rule); border-radius: var(--radius-sm); background: none; cursor: pointer; flex: none; }
 .realm-color::-webkit-color-swatch-wrapper { padding: 2px; }
 .realm-color::-webkit-color-swatch { border: none; border-radius: 5px; }

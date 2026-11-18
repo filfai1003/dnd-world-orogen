@@ -539,6 +539,17 @@ function wishes(p) {
     else if (CLIMATE_RE[p.climate]) { const re = CLIMATE_RE[p.climate]; out.push(['climate', 2, c => re.test(g.codes[g.koppen[c]] || '')]); }
     if (TEMP[p.temp]) { const [a, b] = TEMP[p.temp]; out.push(['temp', 1.5, c => g.tempC[c] >= a && g.tempC[c] <= b]); }
     if (RAIN[p.rain]) { const [a, b] = RAIN[p.rain]; out.push(['rain', 1.5, c => g.rainMm[c] >= a && g.rainMm[c] <= b]); }
+    const WH = { north: [1, 0], south: [-1, 0], east: [0, 1], west: [0, -1], northeast: [1, 1], northwest: [1, -1], southeast: [-1, 1], southwest: [-1, -1] };
+    if (WH[p.where]) {
+        // (where on the world's land: north, the land's northernmost two fifths by latitude; east, its easternmost two fifths
+        // by longitude about the land's middle — a corner both, a little looser)
+        const [n, e] = WH[p.where], t = n && e ? 0.45 : 0.4;
+        out.push(['where', 1.5, c => (!n || (n > 0 ? g.rankN[c] >= 1 - t : g.rankN[c] <= t)) && (!e || (e > 0 ? g.rankE[c] >= 1 - t : g.rankE[c] <= t))]);
+    }
+    if (p.where === 'centre') out.push(['where', 1.5, c => Math.abs(g.rankN[c] - 0.5) <= 0.2 && Math.abs(g.rankE[c] - 0.5) <= 0.2]);
+    // (an island: land a quarter the size of the biggest landmass or less; the main continent, the biggest and any near it)
+    if (p.island === 'island') out.push(['island', 1.5, c => g.compArea[g.comp[c]] < 0.25 * g.compMax]);
+    if (p.island === 'mainland') out.push(['island', 1.5, c => g.compArea[g.comp[c]] >= 0.25 * g.compMax]);
     if (p.sea === 'coast') out.push(['sea', 1, c => !!g.coast[c]]);
     if (p.sea === 'inland') out.push(['sea', 1, c => !g.coast[c] && g.seaHops[c] >= 4]);
     if (HEIGHT[p.height]) { const [a, b] = HEIGHT[p.height]; out.push(['height', 1, c => g.heightM[c] >= a && g.heightM[c] <= b]); }
@@ -610,6 +621,28 @@ function scoreOf(p) {
 }
 const nearOf = (p) => (p && typeof p === 'object' && p.near !== undefined && p.near !== '' ? +p.near : -1);
 const nearReq = (p) => !!(p && typeof p === 'object' && p.req?.near);
+/** The kingdoms it wants a land frontier with — its own list, and every kingdom that lists it (a frontier is shared). */
+const bordersOf = (prefs, k) => {
+    const out = new Set();
+    const own = prefs[k]; if (own && typeof own === 'object' && Array.isArray(own.borders)) for (const j of own.borders) if (j !== k) out.add(+j);
+    prefs.forEach((p, j) => { if (j !== k && p && typeof p === 'object' && Array.isArray(p.borders) && p.borders.includes(k)) out.add(j); });
+    return [...out];
+};
+const bordersReq = (prefs, k, j) => !!(prefs[k]?.req?.borders && (prefs[k].borders || []).includes(j)) || !!(prefs[j]?.req?.borders && (prefs[j].borders || []).includes(k));
+/** Which kingdoms share a land frontier. */
+function frontiers(owner, K) {
+    const g = G, { GW, GH } = g, A = new Uint8Array(K * K);
+    for (let c = 0; c < g.n; c++) {
+        const k = owner[c]; if (k < 0 || !g.land[c]) continue;
+        const y = (c / GW) | 0, x = c - y * GW;
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+            const yy = y + dy; if (yy >= GH) continue;
+            const d = yy * GW + ((x + dx) % GW), j = owner[d];
+            if (j >= 0 && j !== k && g.land[d]) { A[k * K + j] = 1; A[j * K + k] = 1; }
+        }
+    }
+    return A;
+}
 /** Hops to the nearest high mountain (a peak over 2000 m), to the sea; and a big river within a cell. */
 function hopsFields() {
     const g = G, { GW, GH } = g;
@@ -623,6 +656,21 @@ function hopsFields() {
         return h;
     };
     g.mtHops = bfs(c => g.land[c] && g.peakM[c] >= 2000);
+    // (each land cell's place on the world's land, 0 to 1: by latitude, north up; by longitude about the land's middle,
+    // east up — the land's own compass, whatever part of the globe it lies on)
+    {
+        let mx = 0, my = 0; const cells = [];
+        for (let c = 0; c < g.n; c++) if (g.land[c] && !g.ice[c]) { cells.push(c); mx += g.xyz[3 * c] * g.area[c]; my += g.xyz[3 * c + 1] * g.area[c]; }
+        const lon0 = Math.atan2(my, mx), lat = new Float32Array(g.n), lon = new Float32Array(g.n);
+        for (const c of cells) {
+            lat[c] = g.xyz[3 * c + 2];
+            let d = Math.atan2(g.xyz[3 * c + 1], g.xyz[3 * c]) - lon0;
+            d = ((d + 3 * Math.PI) % (2 * Math.PI)) - Math.PI; lon[c] = d;
+        }
+        const rank = (v) => { const r = new Float32Array(g.n).fill(0.5), o = cells.slice().sort((a, b) => v[a] - v[b]), m = Math.max(1, o.length - 1); o.forEach((c, i) => { r[c] = i / m; }); return r; };
+        g.rankN = rank(lat); g.rankE = rank(lon);
+        g.compMax = Math.max(1, ...g.compArea);
+    }
     g.seaHops = bfs(c => !g.land[c] && !g.lake[c]);
     // (how rough the sea off each coast is: the strongest mean wind over the water within two cells; rough is the windiest
     // third of the world's coasts, calm the stillest third)
@@ -681,8 +729,13 @@ function seedCapitals(K, prefs = []) {
     const D0 = Math.sqrt(landArea / K), out = new Array(K).fill(-1), dmin = new Float32Array(g.n).fill(Infinity);
     // (the kingdoms with wishes first, the most particular first — one that wants to be near another after it — each on the
     // best site for it; then the rest, spread among them)
+    // (kingdoms meant to share a frontier come together: once one is placed, the ones it borders follow, each beside it)
     const nW = (k) => wishes(prefs[k]).reduce((t, [, w]) => t + w, 0) + (nearOf(prefs[k]) >= 0 ? -100 : 0);
-    const order = [...Array(K).keys()].sort((a, b) => nW(b) - nW(a));
+    const rank = [...Array(K).keys()].sort((a, b) => nW(b) - nW(a)), order = [], done = new Set();
+    while (order.length < K) {
+        const k = rank.find(k => !done.has(k) && bordersOf(prefs, k).some(b => done.has(b))) ?? rank.find(k => !done.has(k));
+        order.push(k); done.add(k);
+    }
     const Dnear = 0.9 * D0; g.D0 = D0; g.unmet = [];
     let placed = 0;
     for (const k of order) {
@@ -699,6 +752,15 @@ function seedCapitals(K, prefs = []) {
             const l = list.filter(c => angKm(c, out[j]) <= Dnear);
             if (l.length) list = l; else if (nearReq(prefs[k])) g.unmet.push(k);
         }
+        // (a frontier with kingdoms already placed: on the same land, within ~¾ of a kingdom's breadth of each capital; else
+        // as near as the land allows)
+        const bs = bordersOf(prefs, k).filter(b => b < K && out[b] >= 0);
+        if (bs.length) {
+            const same = list.filter(c => bs.every(b => g.comp[c] === g.comp[out[b]]));
+            let l = same.filter(c => bs.every(b => angKm(c, out[b]) <= 0.75 * D0));
+            if (!l.length && same.length) { const far = c => Math.max(...bs.map(b => angKm(c, out[b]))); const m = Math.min(...same.map(far)); l = same.filter(c => far(c) <= m + 0.25 * D0); }
+            if (l.length) list = l; else if (bs.some(b => bordersReq(prefs, k, b))) g.unmet.push(k);
+        }
         // (its preferences: the sites meeting the most of them)
         if (W && W.nPref) {
             let best = 0; for (const c of list) if (W.S[c] > best) best = W.S[c];
@@ -707,7 +769,7 @@ function seedCapitals(K, prefs = []) {
         }
         let pick = -1, pv = -1;
         for (const c of list) {
-            const v = (g.site[c] + 0.01) ** 0.25 * (placed ? 1 - Math.exp(-((dmin[c] / (j >= 0 ? 0.5 * D0 : D0)) ** 2)) : 1);
+            const v = (g.site[c] + 0.01) ** 0.25 * (placed ? 1 - Math.exp(-((dmin[c] / (j >= 0 || bs.length ? 0.5 * D0 : D0)) ** 2)) : 1);
             if (v > pv) { pv = v; pick = c; }
         }
         if (pick < 0) continue;
@@ -748,9 +810,10 @@ function grow(K, prefs = []) {
         // (a kingdom whose capital stands in its climate keeps it there)
         // (a capital moves only where its conditions still hold, its preferences are as well met, and the kingdom it wants
         // to be near is still near)
-        const keep = caps.map((c, k) => { const W = scoreOf(prefs[k]), j = nearOf(prefs[k]); return { W, at: W ? W.S[c] : 0, R: W?.R && W.R[c] ? W.R : null, j: j >= 0 && j < K && angKm(c, caps[j]) <= 0.9 * g.D0 ? j : -1 }; });
+        const keep = caps.map((c, k) => { const W = scoreOf(prefs[k]), j = nearOf(prefs[k]); return { W, at: W ? W.S[c] : 0, R: W?.R && W.R[c] ? W.R : null, j: j >= 0 && j < K && angKm(c, caps[j]) <= 0.9 * g.D0 ? j : -1, bs: bordersOf(prefs, k).filter(b => b < K && g.comp[caps[b]] === g.comp[c]) }; });
         for (let c = 0; c < g.n; c++) {
             const k = owner[c]; if (k < 0 || !(g.site[c] > 0) || g.comp[c] !== g.comp[caps[k]] || (keep[k].W && keep[k].W.S[c] < keep[k].at) || (keep[k].R && !keep[k].R[c]) || (keep[k].j >= 0 && angKm(c, caps[keep[k].j]) > 0.9 * g.D0)) continue;
+            if (keep[k].bs.some(b => angKm(c, caps[b]) > Math.max(0.75 * g.D0, angKm(caps[k], caps[b])))) continue;
             const l = Math.hypot(cx[3 * k], cx[3 * k + 1], cx[3 * k + 2]) || 1;
             const dot = (g.xyz[3 * c] * cx[3 * k] + g.xyz[3 * c + 1] * cx[3 * k + 1] + g.xyz[3 * c + 2] * cx[3 * k + 2]) / l;
             const dk = R_KM * Math.acos(Math.max(-1, Math.min(1, dot))), Dk = 0.35 * Math.sqrt(A[k]) + 50;
@@ -763,7 +826,13 @@ function grow(K, prefs = []) {
             if (F[k] < 0.5 * T) bias[k] = Math.max(-12, bias[k] - 2);
             else if (F[k] > 2 * T) bias[k] = Math.min(12, bias[k] + 2);
         }
+        // (two kingdoms meant to share a frontier that don't yet: both grow, the kingdoms between them give way)
+        const FR = frontiers(owner, K);
+        for (let k = 0; k < K; k++) for (const b of bordersOf(prefs, k)) if (b < K && b > k && !FR[k * K + b]) { bias[k] = Math.max(-20, bias[k] - 4); bias[b] = Math.max(-20, bias[b] - 4); }
     }
+    // (a frontier still missing at the end: a condition unmet)
+    const FR = frontiers(owner, K);
+    for (let k = 0; k < K; k++) for (const b of bordersOf(prefs, k)) if (b < K && !FR[k * K + b] && bordersReq(prefs, k, b) && !g.unmet.includes(k)) g.unmet.push(k);
     return { caps, owner, bias };
 }
 

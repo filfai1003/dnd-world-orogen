@@ -51,7 +51,7 @@ const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location
     onChange: viewChanged, alive: (fin) => fin === world?.fin,
     extraLines: (ctx, W, view) => { drawPlateLines(ctx, W, view, world, { pending, hovered: hoveredPiece }); composer?.draw(ctx, W, view); realm?.draw(ctx, W, view); },
     extraLinesKey: (view) => `${world?.version ?? 0}|${view.layer === 'plates'}|${[...pending].join(',')}|${hoveredPiece}|${realm?.key(view) ?? ''}|${composer?.key() ?? ''}`,
-    infoText: (mode) => (IS_TOUCH ? 'Drag to turn · Pinch to zoom' : `Drag to turn the ${mode === 'map' ? 'map' : 'globe'} · Middle button to move it · Scroll to zoom · Double-click a name to rename it · Ctrl + right click to add a city`) });
+    infoText: (mode) => (IS_TOUCH ? 'Drag to turn · Pinch to zoom' : `${mode === 'map' ? 'Drag to move the map · Right-drag to turn it' : 'Drag to turn the globe'} · Click two cities for the journey · Scroll to zoom · Double-click a name to rename it · Ctrl + right click to add a city`) });
 const view = pv.view;
 // (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });

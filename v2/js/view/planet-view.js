@@ -504,7 +504,7 @@ export class PlanetView {
         if (!this.pictured || this.frameHidden()) { this.graticule.hide(); return; }
         const fv = this.globe.frameView(), spacing = this.view.grid ? this.view.gridStep : 30;
         if (fv.kind === 'map') {
-            const rect = this.band.frameRect();
+            const rect = { l: 0, t: navHeight(), r: innerWidth, b: innerHeight };   // (D&D fork: the map over the whole window, under the panels)
             this.graticule.map({ ...fv, rect, spacing, key: `${fv.key}|${spacing}|${innerWidth}|${innerHeight}|${rect.l},${rect.t},${rect.r},${rect.b}` });
             return;
         }

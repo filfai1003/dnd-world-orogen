@@ -50,7 +50,7 @@ export function dockLayout(pv, composer) {
             if (dock.parentElement !== document.body) document.body.appendChild(dock);
             dock.classList.remove('in-sheet');
             // (only the rail kept clear: a panel it opens lies over the map, which stays where it is)
-            window.__openRight = Math.round(($('dndRail') ?? dock).getBoundingClientRect().width) + 24;
+            window.__openRight = 0;                        // (the map fills the window: the rail and its panels lie over it)
         }
         if (pv.globe) pv.globe._dirty = true;
         pv.onChange?.('view');

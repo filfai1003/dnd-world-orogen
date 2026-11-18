@@ -1755,5 +1755,20 @@ body.dnd-no-degrees .gf-num { display: none; }
 .dnd-cold { color: var(--logo-blue); font-weight: 600; }
 /* D&D fork: the readout under the pointer kept in the bottom-left corner, beside the panel, out of the map's middle */
 @media (min-width: 769px) {
-    #hoverInfo, body.edits-pending #hoverInfo { left: 332px; bottom: var(--space-4); transform: none; }
+    #hoverInfo, body.edits-pending #hoverInfo { left: auto; right: var(--space-4); bottom: var(--space-4); transform: none; z-index: 40; }
 }
+/* D&D fork: the journey between two cities (js/realm/realm.js tripCard) */
+.dnd-trip {
+    position: fixed; left: 50%; bottom: var(--space-4); transform: translateX(-50%); z-index: 45;
+    min-width: 280px; max-width: 460px; padding: var(--space-3) var(--space-4) var(--space-3);
+    background: var(--surface); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
+    font: 400 13px/1.45 var(--font-ui); color: var(--body);
+}
+.dnd-trip-head { font-size: 14px; color: var(--ink); margin: 0 var(--space-5) var(--space-2) 0; }
+.dnd-trip-hint { color: var(--muted); margin-right: var(--space-5); }
+.dnd-trip-row { display: flex; gap: var(--space-2); align-items: flex-start; margin-top: var(--space-1); }
+.dnd-trip-parts { color: var(--muted); font-size: 12px; }
+.dnd-trip-key { flex: none; width: 22px; height: 0; margin-top: 9px; border-top: 3px solid var(--accent); }
+.dnd-trip-key.foot { border-top: 3px dashed var(--logo-violet); }
+.dnd-trip-x { position: absolute; top: 4px; right: 6px; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+@media (max-width: 768px) { .dnd-trip { bottom: 56vh; max-width: calc(100vw - 32px); } .dnd-trip-x { min-width: 44px; min-height: 44px; } }

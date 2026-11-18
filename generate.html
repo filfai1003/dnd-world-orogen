@@ -209,6 +209,11 @@
                     <div class="slider-hint"><span>Ocean world</span><span>Desert world</span></div>
                 </div>
                 <div class="cg">
+                    <label>Plates <span class="tip" data-tip="Number of tectonic plates — more plates means more boundaries where mountains, trenches, and coastlines form">?</span> <span class="v" id="vP">80</span></label>
+                    <input type="range" id="sP" min="4" max="120" value="80" step="1">
+                    <div class="slider-hint"><span>Few</span><span>Many</span></div>
+                </div>
+                <div class="cg">
                     <label>Max land latitude <span class="tip" data-tip="No land further north or south than this: 60 keeps the land where an equirectangular map stretches it least. 90 is no limit. Moving it builds the same world again. Kept by this browser and by the campaign link, not by the planet code">?</span> <span class="v" id="vMaxLat">90°</span></label>
                     <input type="range" id="sMaxLat" min="30" max="90" value="90" step="5">
                     <div class="slider-hint"><span>30°</span><span>No limit</span></div>
@@ -222,11 +227,6 @@
                     <label>Irregularity <span class="tip" data-tip="How randomly the cell points are scattered — 0 gives a uniform grid, 1 gives fully organic, irregular shapes">?</span> <span class="v" id="vJ">0.75</span></label>
                     <input type="range" id="sJ" min="0" max="1" value="0.75" step="0.05">
                     <div class="slider-hint"><span>Uniform</span><span>Scattered</span></div>
-                </div>
-                <div class="cg">
-                    <label>Plates <span class="tip" data-tip="Number of tectonic plates — more plates means more boundaries where mountains, trenches, and coastlines form">?</span> <span class="v" id="vP">80</span></label>
-                    <input type="range" id="sP" min="4" max="120" value="80" step="1">
-                    <div class="slider-hint"><span>Few</span><span>Many</span></div>
                 </div>
                 <div class="cg">
                     <label>Roughness <span class="tip" data-tip="Terrain roughness — higher values add more fractal detail to mountains and coastlines">?</span> <span class="v" id="vNs">0.40</span></label>

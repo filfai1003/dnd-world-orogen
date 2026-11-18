@@ -25,6 +25,7 @@ self.onmessage = ({ data: msg }) => {
         if (msg.cmd === 'init') { G = prepare(msg.grid); self.postMessage({ type: 'ready' }); return; }
         if (!G) throw new Error('no world');
         const t0 = performance.now();
+        if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, a: msg.a, b: msg.b, options: tripOptions(msg.from, msg.to, msg.ports || []) }); return; }
         if (msg.cmd === 'fixed') { G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
         const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
         res.ms = Math.round(performance.now() - t0);
@@ -268,7 +269,7 @@ function searchTravel(sources, maxCost, port, onSettle) {
         const boat = v >= n, c = boat ? v - n : v;
         if (node[c] < 0) { node[c] = v; dist[c] = k; lab[c] = tlab[v]; if (onSettle && onSettle(c)) break; }
         // (getting a boat, at a navigable river; leaving it, anywhere)
-        if (!boat && g.land[c] && g.riverQ[c] >= NAV_Q) relax(v, c + n, k + BOAT_DAYS);
+        if (!boat && !g.noBoat && g.land[c] && g.riverQ[c] >= NAV_Q) relax(v, c + n, k + BOAT_DAYS);
         if (boat) relax(v, c, k);
         const y = (c / GW) | 0, x = c - y * GW;
         for (const [dx, dy] of DIRS) {
@@ -290,6 +291,35 @@ function searchTravel(sources, maxCost, port, onSettle) {
             }
         }
     }
+}
+/** Between two cities (cells `a`, `b`): the best journey with a river boat allowed, and the best without one — each its
+ *  days, how they are spent, and its way. */
+function tripOptions(a, b, ports) {
+    const g = G, port = new Uint8Array(g.n);
+    for (const c of ports) port[c] = 1;
+    const one = (noBoat) => {
+        g.noBoat = noBoat;
+        searchTravel([[a, 0, 0]], Infinity, port, (c) => c === b);
+        g.noBoat = false;
+        if (!(g.dist[b] < Infinity)) return null;
+        const n = g.n, nodes = [];
+        for (let v = g.node[b]; v >= 0; v = g.tfrom[v]) nodes.push(v);
+        nodes.reverse();
+        const by = { foot: 0, carry: 0, river: 0, sea: 0, boat: 0 }, path = [], modes = [];
+        for (let i = 0; i < nodes.length; i++) {
+            const v = nodes[i], c = v % n, dt = i ? g.tdist[v] - g.tdist[nodes[i - 1]] : 0;
+            const pc = i ? nodes[i - 1] % n : -1;
+            if (i && pc === c) { if (v >= n) by.boat += dt; continue; }
+            if (i) {
+                const boat = v >= n, m = !g.land[pc] || !g.land[c] ? 2 : boat && g.riverQ[pc] >= NAV_Q && g.riverQ[c] >= NAV_Q ? 1 : 0;
+                if (m === 2) by.sea += dt; else if (m === 1) by.river += dt; else if (boat) by.carry += dt; else by.foot += dt;
+                modes.push(m);
+            }
+            path.push([((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]);
+        }
+        return { days: g.dist[b], by, path, modes, usesBoat: by.boat > 0 };
+    };
+    return { boat: one(false), noBoat: one(true) };
 }
 /** The trace of a traveller's way to cell `end` (after searchTravel): its cells and each step's way — 0 on foot (or carrying
  *  the boat), 1 by river boat, 2 by sea or lake. */

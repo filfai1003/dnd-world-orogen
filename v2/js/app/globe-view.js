@@ -136,6 +136,7 @@ export class GlobeView {
         this.controls.enableZoom = false;                  // (V1's zoom instead, below)
         // (D&D fork: the mouse's middle button moves the globe in its frame — the camera's view shifted, the globe kept whole)
         this.controls.mouseButtons.MIDDLE = -1;
+        this.controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;   // (D&D fork: the right button turns the globe too; a left click picks a city)
         this.globePan = [0, 0];
         let mid = null;
         glCanvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
@@ -212,6 +213,7 @@ export class GlobeView {
     /** The open area beside the panel (js/open-area.js): fitted to the canvas's part right of `left` pixels, the globe and
      *  the map moved `shift` pixels right of its centre (each frame of its glide: the camera refitted, the canvas kept). */
     setOpenArea(left, shift) {
+        left = 0; shift = 0;                               // (D&D fork: the planet fills the whole window, under the panels)
         if (left === (this.openLeft || 0) && shift === (this.openShift || 0)) return;
         this.openLeft = left; this.openShift = shift;
         this.fitCamera();
@@ -602,6 +604,7 @@ void main() {
 
     /** The room kept round the map (px): above it (from the frame's top), below it, and at each side. */
     setMapPad(pad) {
+        pad = { top: 0, bottom: 0, side: 0 };             // (D&D fork: the map to the window's edges)
         const p = this.mapPad;
         if (p && p.top === pad.top && p.bottom === pad.bottom && p.side === pad.side) return;
         this.mapPad = pad; this._dirty = true;

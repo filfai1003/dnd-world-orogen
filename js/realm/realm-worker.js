@@ -661,13 +661,32 @@ function routes(cities) {
         for (let b = 0; b < cities.length; b++) if (b !== a && sym(a, b) < bv) { bv = sym(a, b); best = b; }
         if (best >= 0) { kept.push(a < best ? [a, best] : [best, a]); deg[a]++; deg[best]++; }
     }
+    // (D&D fork: one network — no city, no group of cities, cut off: the groups joined, the nearest pair first, however
+    // far — by sea when they must)
+    const root = cities.map((_, i) => i), find = (i) => { while (root[i] !== i) i = root[i] = root[root[i]]; return i; };
+    for (const [a, b] of kept) root[find(a)] = find(b);
+    for (let guard = 0; guard < cities.length; guard++) {
+        const groups = new Map();
+        cities.forEach((_, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); });
+        if (groups.size <= 1) break;
+        // (from the smallest group, the cheapest way out to any other)
+        const A = [...groups.values()].sort((x, y) => x.length - y.length)[0], inA = new Set(A);
+        let hit = -1;
+        search(A.map(i => [cities[i].c, 0, i]), 'travel', Infinity, port, (c) => { const b = at.get(c); if (b !== undefined && !inA.has(b)) { hit = b; return true; } return false; });
+        if (hit < 0) { root[find(A[0])] = [...groups.keys()].find(r => r !== find(A[0])); continue; }   // (no way out at all: left as it is)
+        const a = g.lab[cities[hit].c], d = g.dist[cities[hit].c];
+        cost.set(key(a, hit), d);
+        kept.push(a < hit ? [a, hit] : [hit, a]);
+        root[find(a)] = find(hit);
+    }
     // (3: each kept link traced from its cheaper end)
     const bySource = new Map();
     for (const [a, b] of kept) { const [s, t] = C(a, b) <= C(b, a) ? [a, b] : [b, a]; if (!bySource.has(s)) bySource.set(s, []); bySource.get(s).push(t); }
     const out = [];
     for (const [s, targets] of bySource) {
         const want = new Set(targets.map(t => cities[t].c));
-        search([[cities[s].c, 0, s]], 'travel', ROUTE_DAYS * 1.5, port, (c) => { want.delete(c); return want.size === 0; });
+        const far = Math.max(ROUTE_DAYS * 1.5, ...targets.map(t => 1.2 * Math.min(C(s, t), C(t, s)) + 1).filter(Number.isFinite));
+        search([[cities[s].c, 0, s]], 'travel', far, port, (c) => { want.delete(c); return want.size === 0; });
         for (const t of targets) {
             const end = cities[t].c;
             if (!(g.dist[end] < Infinity)) continue;

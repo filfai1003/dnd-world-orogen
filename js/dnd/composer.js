@@ -358,7 +358,9 @@ export class Composer {
         let clip = box;
         if (box) {
             const zl = box.left + box.width / 2 + (-0.5 - mv.panX) * box.width * mv.zoom, zt = box.top + box.height / 2 + (-0.5 - mv.panY) * box.height * mv.zoom;
-            const fr = gl.map?.frame?.getBoundingClientRect?.() ?? { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+            // (the map as it shows: its frame less the room kept round it — the degrees' margin, the panel on the left)
+            const r0 = gl.map?.frame?.getBoundingClientRect?.() ?? { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, pad = gl.mapPad ?? { top: 0, bottom: 0, side: 0 };
+            const fr = { left: r0.left + (gl.openLeft || 0) + pad.side, top: r0.top + pad.top, right: r0.right - pad.side + ((typeof window !== 'undefined' && window.__openRight) || 0), bottom: r0.bottom - pad.bottom };
             // (the equirectangular map wraps east–west as it pans: its width across stays the box's, zoomed about its middle)
             const eqL = box.left + box.width / 2 - box.width * mv.zoom / 2, xl = fv.xRange ? eqL : zl;
             const L = Math.max(xl, fr.left), T = Math.max(zt, fr.top), Rr = Math.min(xl + box.width * mv.zoom, fr.right - ((typeof window !== 'undefined' && window.__openRight) || 0)), B = Math.min(zt + box.height * mv.zoom, fr.bottom);

@@ -486,9 +486,17 @@ function setSlidersFrom(params) {
 /** A planet code, with the fork's suffix for plates and continents past the code's range (~p<plates>c<continents>). */
 function decodeCode(code) {
     const [base, extra] = String(code).trim().split('~');
-    const params = decodePlanetCode(base);
+    // (the plates edited are read against the plates' real number — past 120, it is in the suffix: the code's own reader
+    // would drop an index past its 120)
+    const dash = base.indexOf('-'), head = dash < 0 ? base : base.slice(0, dash), toggles = dash < 0 ? '' : base.slice(dash + 1).toLowerCase();
+    const params = decodePlanetCode(head);
+    if (params && toggles) {
+        if (!/^([0-9a-z]{2})+$/.test(toggles)) return null;
+        params.toggledIndices = toggles.match(/../g).map(t => parseInt(t, 36));
+    }
     const m = params && extra ? /^(?:p(\d+)c(\d+))?(f)?$/.exec(extra) : null;
     if (m?.[1]) { params.P = +m[1]; params.numContinents = +m[2]; }
+    if (params?.toggledIndices?.some(i => i >= params.P)) return null;
     if (params) params.flat = !!m?.[3];
     return params;
 }

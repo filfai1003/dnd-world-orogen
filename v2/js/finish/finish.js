@@ -259,7 +259,7 @@ export async function finishPlanet({ frame, simMesh, seed, cells, pool = null, c
         const L = maxLat, deg = 180 / Math.PI, H = 7;
         for (let c = 0; c < n; c++) {
             const lat = Math.abs(Math.asin(Math.max(-1, Math.min(1, mesh.xyz[3 * c + 2])))) * deg;   // (this mesh: z north)
-            const LON = Math.atan2(mesh.xyz[3 * c + 1], mesh.xyz[3 * c]), Le = seamLon !== null ? (L - 2.5 + 2.5 * (0.55 * Math.sin(3 * LON + 0.7) + 0.3 * Math.sin(7 * LON + 2.1) + 0.15 * Math.sin(13 * LON + 4.2))) : L;   // (as the page's worker: js/planet-worker.js)
+            const LON = Math.atan2(mesh.xyz[3 * c + 1], mesh.xyz[3 * c]), Le = seamLon !== null && L < 90 ? (L - 2.5 + 2.5 * (0.55 * Math.sin(3 * LON + 0.7) + 0.3 * Math.sin(7 * LON + 2.1) + 0.15 * Math.sin(13 * LON + 4.2))) : L;   // (as the page's worker: js/planet-worker.js)
             let f = lat < Le - 4 ? 0 : Math.min(1, (lat - (Le - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - Le);
             if (seamLon !== null) {
                 let d = Math.abs(Math.atan2(mesh.xyz[3 * c + 1], mesh.xyz[3 * c]) * deg - seamLon); if (d > 180) d = 360 - d;

@@ -128,7 +128,7 @@ function sharedPayload(present, mesh, r_xyz, seed) {
     // (the land kept off the poles: the picture's heights and the finish's)
     const hk = copy(w.heightKm);
     const seam = sinkPoles(tm.xyz, hk, surface.heightKm);
-    surface.maxLat = FLAT ? Math.min(MAX_LAT, 60) : MAX_LAT; surface.seamLon = seam;
+    surface.maxLat = MAX_LAT; surface.seamLon = seam;
     const payload = {
         mesh: { numCells: tm.numCells, xyz: copy(tm.xyz), adjOffset: copy(tm.adjOffset), adjList: copy(tm.adjList) },
         heightKm: hk, shade: copy(w.shade), story, regionCell: copy(present.regionCell),
@@ -264,13 +264,14 @@ function importGround(data, again = false) {
 }
 
 // (D&D fork: no land beyond this latitude, north or south — the land there sunk below the sea, the coast eased in over a
-// few degrees; 90 is no limit. Set by every message that carries it. A flat world (FLAT): the band within 60° only, and a
-// seam — the meridian with the least land — sunk into a strip of sea, so the map's east and west edges meet nothing.)
+// few degrees; 90 is no limit. Set by every message that carries it. A flat world (FLAT): a
+// seam — the meridian with the least land — sunk into a strip of sea, so the map's east and west edges meet nothing; no
+// latitude limit of its own.)
 let MAX_LAT = 90, FLAT = false;
 const SEAM_HALF = 7;                     // (the seam's sea: this many degrees each side of it, eased in over the outer 4)
 /** The land sunk beyond the latitude limit, and for a flat world along its seam. Returns the seam's longitude (or null). */
 function sinkPoles(xyz, ...fields) {
-    const L = FLAT ? Math.min(MAX_LAT, 60) : MAX_LAT;
+    const L = MAX_LAT;                                   // (a flat world: no latitude limit — the owner's wish; only the seam)
     if (!(L < 90) && !FLAT) return null;
     const n = fields[0].length, deg = 180 / Math.PI;
     const latOf = (r) => Math.abs(Math.asin(Math.max(-1, Math.min(1, xyz[3 * r + 2])))) * deg;   // (the terrain mesh: z north)
@@ -287,7 +288,7 @@ function sinkPoles(xyz, ...fields) {
     for (let r = 0; r < n; r++) {
         const lat = latOf(r);
         // (a flat world's edge north and south wanders a few degrees with the longitude, not a ruler's line)
-        const LON = lonOf(r) * Math.PI / 180, Le = FLAT ? (L - 2.5 + 2.5 * (0.55 * Math.sin(3 * LON + 0.7) + 0.3 * Math.sin(7 * LON + 2.1) + 0.15 * Math.sin(13 * LON + 4.2))) : L;
+        const LON = lonOf(r) * Math.PI / 180, Le = FLAT && L < 90 ? (L - 2.5 + 2.5 * (0.55 * Math.sin(3 * LON + 0.7) + 0.3 * Math.sin(7 * LON + 2.1) + 0.15 * Math.sin(13 * LON + 4.2))) : L;
         let f = lat < Le - 4 ? 0 : Math.min(1, (lat - (Le - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - Le);
         if (seam !== null) {
             let d = Math.abs(lonOf(r) - seam); if (d > 180) d = 360 - d;

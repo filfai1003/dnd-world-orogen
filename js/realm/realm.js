@@ -201,8 +201,8 @@ export class Realm {
             const { boat, noBoat } = t.options;
             const row = (o, cls, label) => (o ? `<div class="dnd-trip-row"><i class="dnd-trip-key ${cls}"></i><div><b>${label}: ${days(o.days)}</b><div class="dnd-trip-parts">${parts(o)}</div></div></div>` : `<div class="dnd-trip-row"><i class="dnd-trip-key ${cls}"></i><div><b>${label}</b>: no way</div></div>`);
             body = `<div class="dnd-trip-head"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b></div>
-                ${boat?.usesBoat ? row(boat, 'boat', 'With a boat') : `<div class="dnd-trip-row"><i class="dnd-trip-key boat"></i><div><b>With a boat</b>: no better — the boat does not help here</div></div>`}
-                ${row(noBoat, 'foot', 'Without a boat')}`;
+                ${boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? row(boat, 'boat', 'With a boat') : ''}
+                ${row(noBoat, 'foot', boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? 'Without a boat' : 'On foot (a boat would not help)')}`;
         }
         el.innerHTML = `<button type="button" class="dnd-trip-x" aria-label="Close">×</button>${body}`;
     }
@@ -648,10 +648,9 @@ export class Realm {
         if (this.trip) {
             const t = this.trip, way = (o, col, dash) => {
                 if (!o) return;
-                ctx.setLineDash([]); ctx.lineWidth = 6.5; ctx.strokeStyle = 'rgba(250,242,222,0.85)'; ctx.beginPath(); line(o.path); ctx.stroke();
                 ctx.setLineDash(dash); ctx.lineWidth = 3.5; ctx.strokeStyle = col; ctx.beginPath(); line(o.path); ctx.stroke(); ctx.setLineDash([]);
             };
-            if (t.options) { way(t.options.noBoat, 'rgba(110,90,160,0.95)', [9, 5]); if (t.options.boat?.usesBoat) way(t.options.boat, 'rgba(178,34,30,0.95)', []); }
+            if (t.options) { way(t.options.noBoat, 'rgba(110,90,160,0.95)', [9, 5]); if (t.options.boat?.usesBoat && t.options.boat.days < (t.options.noBoat?.days ?? Infinity) - 0.05) way(t.options.boat, 'rgba(178,34,30,0.95)', []); }
             for (const i of [t.a, t.b]) { const q = i === undefined ? null : pr.at(d.cities[i].u, d.cities[i].v); if (!q) continue; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 12, 0, 2 * Math.PI); ctx.stroke(); }
         }
         // (the names: the kingdoms' first, over their capitals, then the towns' by importance, none over another)

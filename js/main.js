@@ -55,14 +55,6 @@ const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location
 const view = pv.view;
 // (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });
-// (D&D fork: the land's latitude limit — remembered by this browser, set by a campaign link; the next world built keeps to it)
-{
-    const sl = $('sMaxLat'), show = () => { $('vMaxLat').textContent = +sl.value >= 90 ? 'No limit' : `${sl.value}°`; };
-    try { const kept = localStorage.getItem('dnd.maxLat'); if (kept) sl.value = kept; } catch { /* */ }
-    if (realm.presetMaxLat) sl.value = String(realm.presetMaxLat);
-    show();
-    sl.addEventListener('input', () => { show(); try { localStorage.setItem('dnd.maxLat', sl.value); } catch { /* */ } });
-}
 trimView(pv);
 // (once the page's own state below is set up: the composer, the sliders' boxes, the Politica panel, the map to start)
 queueMicrotask(() => {
@@ -104,7 +96,7 @@ startWorker();
 /** The sliders, as the worker reads them. */
 function sliders() {
     const v = (id) => +$(id).value;
-    return { maxLat: $('sMaxLat') ? +$('sMaxLat').value : 90, N: detailFromSlider(v('sN')), P: v('sP'), jitter: v('sJ'), nMag: v('sNs'), numContinents: v('sCn'), terrainWarp: v('sTw'), smoothing: v('sS'),
+    return { maxLat: 90, N: detailFromSlider(v('sN')), P: v('sP'), jitter: v('sJ'), nMag: v('sNs'), numContinents: v('sCn'), terrainWarp: v('sTw'), smoothing: v('sS'),
         hydraulicErosion: v('sHEr'), thermalErosion: v('sTEr'), ridgeSharpening: v('sRs'), glacialErosion: v('sGl'), continentSizeVariety: v('sCsv'),
         greenhouse: v('sTmp'), precipitationOffset: v('sPrc'), landCoverage: v('sLc') };
 }
@@ -276,6 +268,55 @@ for (const el of [pv.ui.canvas, pv.ui.map]) {
     });
     el.addEventListener('contextmenu', (e) => { if (e.ctrlKey || e.metaKey) e.preventDefault(); });
 }
+// (D&D fork: Ctrl-drag over the plates — a closed loop marks every piece inside it, an open line the pieces it passes
+// over; a Ctrl-click, as before, one piece. Then Rebuild)
+{
+    const cv = document.createElement('canvas');
+    Object.assign(cv.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: '30' });
+    document.body.appendChild(cv);
+    let L = null;
+    const onPlanet = (e) => e.target === pv.ui.canvas || e.target === pv.ui.map;
+    const pieceAt = (x, y) => { const at = regionAt({ clientX: x, clientY: y }); return at ? world.r_plate[at.r] : -1; };
+    const draw = () => {
+        const dpr = Math.min(2, devicePixelRatio || 1), ctx = cv.getContext('2d');
+        if (cv.width !== innerWidth * dpr) { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; }
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+        if (!L) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(158,43,37,0.95)';
+        ctx.beginPath(); L.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+    };
+    document.addEventListener('pointerdown', (e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0 || building || !world || !onPlanet(e)) return;
+        L = { pts: [[e.clientX, e.clientY]] };
+        e.stopImmediatePropagation(); e.preventDefault();
+    }, { capture: true });
+    addEventListener('pointermove', (e) => { if (!L) return; e.stopImmediatePropagation(); L.pts.push([e.clientX, e.clientY]); draw(); }, { capture: true });
+    addEventListener('pointerup', (e) => {
+        if (!L) return;
+        e.stopImmediatePropagation();
+        const pts = L.pts; L = null; draw();
+        let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        const got = new Set();
+        if (len < 6) { const p = pieceAt(e.clientX, e.clientY); if (p >= 0) got.add(p); }
+        else if (len > 80 && Math.hypot(pts[0][0] - pts.at(-1)[0], pts[0][1] - pts.at(-1)[1]) < Math.max(40, 0.15 * len)) {
+            // (closed: every piece under a point inside the loop, read every few pixels)
+            const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), inside = (x, y) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+            for (let y = Math.min(...ys); y <= Math.max(...ys); y += 6) for (let x = Math.min(...xs); x <= Math.max(...xs); x += 6) if (inside(x, y)) { const p = pieceAt(x, y); if (p >= 0) got.add(p); }
+        } else {
+            // (open: the pieces the line passes over, read every few pixels along it)
+            for (let i = 1; i < pts.length; i++) {
+                const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], k = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 3));
+                for (let j = 0; j <= k; j++) { const p = pieceAt(x0 + (x1 - x0) * j / k, y0 + (y1 - y0) * j / k); if (p >= 0) got.add(p); }
+            }
+        }
+        if (!got.size) return;
+        // (a single piece toggles; several are marked — or, all already marked, unmarked)
+        if (got.size === 1) { const p = [...got][0]; if (pending.has(p)) pending.delete(p); else pending.add(p); }
+        else if ([...got].every(p => pending.has(p))) for (const p of got) pending.delete(p);
+        else for (const p of got) pending.add(p);
+        pendingChanged(); readout(e);
+    }, { capture: true });
+}
 addEventListener('keydown', (e) => {
     if ((e.key === 'Control' || e.key === 'Meta') && !e.repeat) { editKey = true; if (lastPointer && pv.ui.hover.style.display !== 'none' && !building) readout(lastPointer); }
 });
@@ -397,8 +438,6 @@ function applyCode(code) {
     generate(params.seed, params.toggledIndices);
 }
 loadBtn.addEventListener('click', () => applyCode(seedInput.value));
-// (D&D fork: the land's latitude limit changed — the same world built again at once, kept within it)
-$('sMaxLat')?.addEventListener('change', () => { if (currentCode && !building) applyCode(currentCode); });
 seedInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCode(seedInput.value); });
 
 // ── the Inspect list: the world's past, per region ──

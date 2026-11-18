@@ -1759,8 +1759,8 @@ body.dnd-no-degrees .gf-num { display: none; }
 }
 /* D&D fork: the journey between two cities (js/realm/realm.js tripCard) */
 .dnd-trip {
-    position: fixed; left: 50%; bottom: var(--space-4); transform: translateX(-50%); z-index: 45;
-    min-width: 280px; max-width: 460px; padding: var(--space-3) var(--space-4) var(--space-3);
+    position: fixed; right: 96px; top: 150px; z-index: 45; max-height: calc(100vh - 170px); overflow-y: auto;
+    width: 380px; padding: var(--space-3) var(--space-4) var(--space-3);
     background: var(--surface); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
     font: 400 13px/1.45 var(--font-ui); color: var(--body);
 }
@@ -1771,7 +1771,7 @@ body.dnd-no-degrees .gf-num { display: none; }
 .dnd-trip-key { flex: none; width: 22px; height: 0; margin-top: 9px; border-top: 3px solid var(--accent); }
 .dnd-trip-key.foot { border-top: 3px dashed var(--logo-violet); }
 .dnd-trip-x { position: absolute; top: 4px; right: 6px; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
-@media (max-width: 768px) { .dnd-trip { bottom: 56vh; max-width: calc(100vw - 32px); } .dnd-trip-x { min-width: 44px; min-height: 44px; } }
+@media (max-width: 768px) { .dnd-trip { top: auto; right: 16px; bottom: 56vh; width: calc(100vw - 32px); } .dnd-trip-x { min-width: 44px; min-height: 44px; } }
 /* D&D fork: the progress bar at the bottom (js/dnd/panels.js progressBar) */
 .dnd-progress { position: fixed; left: 50%; transform: translateX(-50%); bottom: 44px; z-index: 46; width: min(520px, calc(100vw - 32px));
     padding: var(--space-2) var(--space-3); background: var(--surface); border: var(--line-hair) solid var(--rule); border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
@@ -1788,3 +1788,18 @@ body.dnd-no-degrees .gf-num { display: none; }
 .realm-menu button:hover:not(:disabled) { background: var(--rule); }
 .realm-menu button:disabled { color: var(--muted); cursor: default; }
 @media (max-width: 768px) { .realm-menu button { min-height: 44px; } }
+/* the journey's ways (realm.js tripCard): each a button showing it on the map */
+.dnd-trip-way { display: flex; gap: var(--space-2); align-items: flex-start; width: 100%; margin-top: 2px; padding: var(--space-1) var(--space-2); text-align: left;
+    background: none; border: var(--line-hair) solid transparent; border-radius: var(--radius-sm); font: inherit; color: inherit; cursor: pointer; }
+.dnd-trip-way:hover { background: var(--rule); }
+.dnd-trip-way.on { border-color: var(--accent); }
+.dnd-trip-way.none { cursor: default; color: var(--muted); }
+.dnd-trip-way > span { display: flex; flex-direction: column; }
+.dnd-way-dot { flex: none; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%; background: var(--muted); }
+.dnd-way-dot.mix { background: var(--ink); }
+.dnd-way-dot.foot { background: var(--logo-violet); }
+.dnd-way-dot.canoe { background: var(--logo-blue); opacity: 0.55; }
+.dnd-way-dot.light { background: var(--logo-ochre); }
+.dnd-way-dot.heavy { background: var(--accent); }
+.dnd-way-dot.ship { background: var(--logo-blue); }
+@media (max-width: 768px) { .dnd-trip-way { min-height: 44px; } }

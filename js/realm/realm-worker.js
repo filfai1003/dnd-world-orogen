@@ -43,7 +43,8 @@ self.onmessage = ({ data: msg }) => {
         const t0 = performance.now();
         G.reqId = msg.id; G.ncap = msg.ncap || []; G.keepPorts = msg.keepPorts || []; G.seatsIn = msg.seats || null; G.edits = msg.edits || null;
         if (msg.cmd === 'link') { self.postMessage({ type: 'link', id: msg.id, route: linkRoute(msg.a, msg.b, msg.from, msg.to, msg.ports || []) }); return; }
-        if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, a: msg.a, b: msg.b, options: tripOptions(msg.from, msg.to, msg.ports || []) }); return; }
+        if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, a: msg.a, b: msg.b, options: tripOptions(msg.from, msg.to, (k, n) => self.postMessage({ type: 'tripProgress', id: msg.id, k, n })) }); return; }
+        if (msg.cmd === 'unroute') { const gone = new Set(msg.pairs.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`))); G.routeList = (G.routeList || []).filter(r => !gone.has(r.a < r.b ? `${r.a}-${r.b}` : `${r.b}-${r.a}`)); roadMasks(); return; }
         if (msg.cmd === 'fixed') { say(1); G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
         const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
         res.ms = Math.round(performance.now() - t0);
@@ -324,31 +325,110 @@ function searchTravel(sources, maxCost, port, onSettle) {
 }
 /** Between two cities (cells `a`, `b`): the best journey with a river boat allowed, and the best without one — each its
  *  days, how they are spent, and its way. */
-function tripOptions(a, b, ports) {
-    const g = G, port = portMap(ports);
-    const one = (noBoat) => {
-        g.noBoat = noBoat;
-        searchTravel([[a, 0, 0]], Infinity, port, (c) => c === b);
-        g.noBoat = false;
-        if (!(g.dist[b] < Infinity)) return null;
-        const n = g.n, nodes = [];
-        for (let v = g.node[b]; v >= 0; v = g.tfrom[v]) nodes.push(v);
-        nodes.reverse();
-        const by = { foot: 0, carry: 0, river: 0, sea: 0, boat: 0 }, path = [], modes = [];
-        for (let i = 0; i < nodes.length; i++) {
-            const v = nodes[i], c = v % n, dt = i ? g.tdist[v] - g.tdist[nodes[i - 1]] : 0;
-            const pc = i ? nodes[i - 1] % n : -1;
-            if (i && pc === c) { if (v >= n) by.boat += dt; continue; }
-            if (i) {
-                const boat = v >= n, m = !g.land[pc] || !g.land[c] ? 2 : boat && g.riverQ[pc] >= NAV_Q && g.riverQ[c] >= NAV_Q ? 1 : 0;
-                if (m === 2) by.sea += dt; else if (m === 1) by.river += dt; else if (boat) by.carry += dt; else by.foot += dt;
-                modes.push(m);
-            }
-            path.push([((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]);
+// ── a journey's ways (D&D fork): on foot, by canoe, by light or heavy vehicle, by travelling boat — one at a time, and
+// changed (bought, sold, left) only in a city. Each a layer of the search: node = cell + layer × n. ──
+const FOOT = 0, CANOE = 1, LIGHT = 2, HEAVY = 3, SHIP = 4, LAYERS = 5;
+const CANOE_KM_DAY = 45;     // paddled on still water; the current along adds or takes a great deal (0.3 m/s: twice as fast)
+const CANOE_CARRY = 1.8;     // walking with the canoe on one's back: this many times slower
+const CANOE_Q = 50;          // a river big enough to paddle (m³/s)
+const LIGHT_KM_DAY = 55;     // a light vehicle (a cart, riders): any road
+const HEAVY_KM_DAY = 75;     // a heavy vehicle (a coach with relays, a caravan): the main roads alone
+const SWITCH_DAYS = 0.5;     // in a city: a vehicle bought, sold or left
+const SHIP_RIVER_Q = 1000;   // a river big enough for the travelling boat (m³/s)
+/** Can a traveller be in this layer on this cell? */
+function canBe(L, c) {
+    const g = G;
+    switch (L) {
+        case FOOT: return !!g.land[c];
+        case CANOE: return true;
+        case LIGHT: return !!g.roadAny?.[c];
+        case HEAVY: return !!g.roadMain?.[c];
+        case SHIP: return !g.land[c] || g.riverQ[c] >= SHIP_RIVER_Q || !!g.harbour?.[c];
+    }
+    return false;
+}
+/** The days of a step from a to b (d km, along (ex, ny)) in a layer, or −1. */
+function layerStep(L, a, b, d, ex, ny) {
+    const g = G, la = g.land[a], lb = g.land[b];
+    const slope = (1 + 10 * Math.abs(g.heightM[b] - g.heightM[a]) / (d * 1000));
+    if (L === FOOT) return la && lb ? stepCost(a, b, d, ex, ny, 'travel', null) : -1;
+    if (L === LIGHT) return g.roadAny[a] && g.roadAny[b] ? d / LIGHT_KM_DAY * slope : -1;
+    if (L === HEAVY) return g.roadMain[a] && g.roadMain[b] ? d / HEAVY_KM_DAY * slope : -1;
+    if (L === CANOE) {
+        if (g.seaIce[b] > 0.3) return -1;
+        // (on open water: paddled, the current for or against counting much; far out to sea, slow and dangerous)
+        if (!lb) {
+            const cAlong = g.curU[b] * ex + g.curV[b] * ny, sp = Math.max(0.25, Math.min(3, 1 + cAlong / 0.3));
+            const far = g.landDist[b], risk = far > 300 ? 4 : far > 100 ? 2 : 1;
+            return d / (CANOE_KM_DAY * sp) * risk;
         }
-        return { days: g.dist[b], by, path, modes, usesBoat: by.boat > 0 };
-    };
-    return { boat: one(false), noBoat: one(true) };
+        // (on a river: with its flow or against it)
+        if (la && g.riverQ[a] >= CANOE_Q && g.riverQ[b] >= CANOE_Q) {
+            const fu = g.flowU[a] + g.flowU[b], fv = g.flowV[a] + g.flowV[b], fl = Math.hypot(fu, fv), along = fl > 0 ? (fu * ex + fv * ny) / fl : 0;
+            return d / (CANOE_KM_DAY * Math.max(0.35, 1 + 0.8 * along));
+        }
+        // (from the shore into the water: no cost of its own — on land, the canoe carried)
+        if (!la) return d / CANOE_KM_DAY;
+        return stepCost(a, b, d, ex, ny, 'travel', null) * CANOE_CARRY;
+    }
+    if (L === SHIP) {
+        if (!la && !lb) return stepCost(a, b, d, ex, ny, 'travel', null);                     // (the sea or a lake, under sail)
+        if (g.riverQ[a] >= SHIP_RIVER_Q && g.riverQ[b] >= SHIP_RIVER_Q) {                        // (up or down a great river)
+            const fu = g.flowU[a] + g.flowU[b], fv = g.flowV[a] + g.flowV[b], fl = Math.hypot(fu, fv), along = fl > 0 ? (fu * ex + fv * ny) / fl : 0;
+            return d / (RIVER_KM_DAY * Math.max(0.4, 1 + 0.6 * along));
+        }
+        return d / 40;                                                                          // (in the harbour, to the quay)
+    }
+    return -1;
+}
+/** The best journey from cell `a` to cell `b` using only the layers `allowed` (on foot always), vehicles changed in cities. */
+function journey(a, b, allowed) {
+    const g = G, { GW, GH, n } = g, N = LAYERS * n;
+    if (!g.mdist) { g.mdist = new Float32Array(N); g.mfrom = new Int32Array(N); g.mheap = new Heap(1 << 20); }
+    const { mdist, mfrom, mheap } = g, ok = new Uint8Array(LAYERS);
+    for (const L of allowed) ok[L] = 1; ok[FOOT] = 1;
+    mdist.fill(Infinity); mfrom.fill(-1); mheap.clear();
+    mdist[a] = 0; mheap.push(a, 0);
+    let end = -1;
+    while (mheap.size) {
+        const k = mheap.keys[0], v = mheap.pop();
+        if (k > mdist[v]) continue;
+        const L = (v / n) | 0, c = v - L * n;
+        if (c === b) { end = v; break; }
+        const relax = (u, nk) => { if (nk < mdist[u]) { mdist[u] = nk; mfrom[u] = v; mheap.push(u, nk); } };
+        // (in a city: another way of travelling)
+        if (g.cityCell[c]) for (let L2 = 0; L2 < LAYERS; L2++) if (L2 !== L && ok[L2] && canBe(L2, c)) relax(c + L2 * n, k + SWITCH_DAYS);
+        const y = (c / GW) | 0, x = c - y * GW;
+        for (const [dx, dy] of DIRS) {
+            const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+            const e = yy * GW + ((x + dx + GW) % GW);
+            if (!canBe(L, e)) continue;
+            const ddx = dx * 0.5 * (g.dxKm[y] + g.dxKm[yy]), ddy = dy * g.dyKm, d = Math.hypot(ddx, ddy);
+            const st = layerStep(L, c, e, d, ddx / d, -ddy / d);
+            if (st >= 0) relax(e + L * n, k + st);
+        }
+    }
+    if (end < 0) return null;
+    const nodes = [];
+    for (let v = end; v >= 0; v = mfrom[v]) nodes.push(v);
+    nodes.reverse();
+    const KEYS = ['foot', 'canoe', 'light', 'heavy', 'ship'];
+    const by = { foot: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path = [], layers = [];
+    for (let i = 0; i < nodes.length; i++) {
+        const v = nodes[i], L = (v / n) | 0, c = v - L * n, dt = i ? mdist[v] - mdist[nodes[i - 1]] : 0;
+        if (i && nodes[i - 1] % n === c) { by.change += dt; continue; }
+        if (i) { by[KEYS[L]] += dt; layers.push(L); }
+        path.push([((c % GW) + 0.5) / GW, (((c / GW) | 0) + 0.5) / GH]);
+    }
+    return { days: mdist[end], by, path, layers };
+}
+/** Between two cities: the best journey each way of travelling allows — on foot, by canoe, by light vehicle, by heavy
+ *  vehicle, by travelling boat — and the best of all, mixing them (changed in cities). */
+function tripOptions(a, b, done) {
+    const plans = [['foot', [FOOT]], ['canoe', [CANOE]], ['light', [LIGHT]], ['heavy', [HEAVY]], ['ship', [SHIP]], ['mix', [CANOE, LIGHT, HEAVY, SHIP]]];
+    const out = {};
+    plans.forEach(([key, allowed], i) => { out[key] = journey(a, b, allowed); done?.(i + 1, plans.length); });
+    return out;
 }
 /** The trace of a traveller's way to cell `end` (after searchTravel): its cells and each step's way — 0 on foot (or carrying
  *  the boat), 1 by river boat, 2 by sea or lake. */
@@ -999,6 +1079,10 @@ function routes(cities, pop = []) {
         if (hit >= 0) { const { cells, modes } = traceTravel(cities[hit].c); out.push({ a, b: hit, days: g.dist[cities[hit].c], cells, modes }); onFoot[a] = onFoot[hit] = 1; }
         g.landOnly = false;
     }
+    // (the routes kept for the vehicles: their land cells are the roads)
+    g.cityCell = new Uint8Array(g.n); for (const t of cities) g.cityCell[t.c] = 1;
+    g.harbour = portMap(cities.map(t => t.c));
+    g.routeList = out.map(r => ({ a: r.a, b: r.b, cells: r.cells, main: !!((cities[r.a].capital || cities[r.a].seat) && (cities[r.b].capital || cities[r.b].seat)) }));
     // (and the page's edits: the routes taken away, the routes added by hand)
     const E = g.edits;
     if (E) {
@@ -1010,7 +1094,20 @@ function routes(cities, pop = []) {
             if (g.dist[cities[b].c] < Infinity) { const { cells, modes } = traceTravel(cities[b].c); out.push({ a, b, days: g.dist[cities[b].c], cells, modes, hand: true }); }
         }
     }
+    {
+        const gone = new Set(((g.edits?.removed) || []).map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
+        g.routeList = out.filter(r => !gone.has(r.a < r.b ? `${r.a}-${r.b}` : `${r.b}-${r.a}`)).map(r => ({ a: r.a, b: r.b, cells: r.cells, main: !!((cities[r.a].capital || cities[r.a].seat) && (cities[r.b].capital || cities[r.b].seat)) }));
+        roadMasks();
+    }
     return out;
+}
+/** The roads' cells (any road; the main ones) from the routes kept: their steps on land. */
+function roadMasks() {
+    const g = G;
+    g.roadAny = new Uint8Array(g.n); g.roadMain = new Uint8Array(g.n);
+    for (const r of g.routeList || []) for (const c of r.cells) if (g.land[c]) { g.roadAny[c] = 1; if (r.main) g.roadMain[c] = 1; }
+    // (every city on the roads it stands on)
+    if (g.cityCell) for (let c = 0; c < g.n; c++) if (g.cityCell[c]) { g.roadAny[c] = 1; }
 }
 
 /** A kingdom's share of each material's sources (0…1), where it holds any. */
@@ -1036,6 +1133,7 @@ function linkRoute(a, b, from, to, ports) {
     searchTravel([[from, 0, a]], Infinity, port, (c) => c === to);
     if (!(g.dist[to] < Infinity)) return null;
     const { cells, modes } = traceTravel(to);
+    (g.routeList ||= []).push({ a, b, cells, main: false }); roadMasks();
     return routeOut({ a, b, days: g.dist[to], cells, modes, hand: true });
 }
 

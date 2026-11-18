@@ -36,6 +36,8 @@ const WISHES = [
     ['ore', 'Riches', [['', 'Any'], ['gems', 'Main gem mines'], ['iron', 'Main iron mines'], ['copper', 'Main copper mines'], ['tin', 'Main tin mines'], ['silver', 'Main silver mines'], ['gold', 'Main gold mines'], ['salt', 'Main salt'], ['coal', 'Main coal']]],
 ];
 /** A kingdom's wishes in a line — its conditions marked "must". */
+/** A journey's ways on the map: on foot, canoe, light vehicle, heavy vehicle, travelling boat — [colour, dash]. */
+const WAY_STYLE = [['rgba(110,90,160,0.95)', [8, 5]], ['rgba(63,124,194,0.6)', []], ['rgba(201,138,46,0.95)', []], ['rgba(178,34,30,0.95)', []], ['rgba(63,124,194,0.95)', []]];
 const HOLD_NAMES = { gems: 'Gems', iron: 'Iron', copper: 'Copper', tin: 'Tin', silver: 'Silver', gold: 'Gold', salt: 'Salt', coal: 'Coal' };
 const wishText = (p, names = []) => [...WISHES.map(([key, , opts]) => (p?.[key] ? [key, opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '')] : null)),
     p?.near !== undefined && p?.near !== '' && names[+p.near] ? ['near', `near ${names[+p.near]}`] : null]
@@ -245,6 +247,7 @@ export class Realm {
             E.removed.push([r.a, r.b]);
             E.added = E.added.filter(([a, b]) => !((a === r.a && b === r.b) || (a === r.b && b === r.a)));
         }
+        this.worker.postMessage({ cmd: 'unroute', pairs: list.map(r => [r.a, r.b]) });
         this.runsFor = null; this.changed(); this.save();
     }
     /** A route added by hand between two cities: the best way between them, on the roads as they are. */
@@ -265,27 +268,37 @@ export class Realm {
         if (!t || t.b !== undefined || t.a === best) { this.trip = { a: best }; this.tripCard(); this.changed(false); return; }
         t.b = best; t.loading = true; this.tripCard(); this.changed(false);
         const d = this.data;
-        this.worker.postMessage({ cmd: 'trip', id: ++this.tripId, a: t.a, b: best, from: d.cities[t.a].c, to: d.cities[best].c, ports: d.cities.filter(c => c.port).map(c => c.c) });
+        this.worker.postMessage({ cmd: 'trip', id: ++this.tripId, a: t.a, b: best, from: d.cities[t.a].c, to: d.cities[best].c });
     }
     clearTrip() { this.trip = null; this.tripCard(); this.changed(false); }
     /** The journey's card: the two ways, their days and how they are spent. */
     tripCard() {
         let el = $('dndTrip');
         if (!this.trip) { el?.remove(); return; }
-        if (!el) { el = document.createElement('div'); el.id = 'dndTrip'; el.className = 'dnd-trip'; document.body.appendChild(el); el.addEventListener('click', (e) => { if (e.target.closest('.dnd-trip-x')) this.clearTrip(); }); }
+        if (!el) {
+            el = document.createElement('div'); el.id = 'dndTrip'; el.className = 'dnd-trip'; document.body.appendChild(el);
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.dnd-trip-x')) { this.clearTrip(); return; }
+                const r = e.target.closest('[data-way]'); if (r && this.trip?.options?.[r.dataset.way]) { this.trip.shown = r.dataset.way; this.tripCard(); this.changed(false); }
+            });
+        }
         const t = this.trip, nm = (i) => esc(this.names.cities[i] ?? '');
         const days = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} d`;
-        const parts = (o) => [['foot', 'on foot'], ['boat', 'getting a river boat'], ['river', 'by river boat'], ['carry', 'carrying the boat'], ['sea', 'by ship']]
+        const parts = (o) => [['foot', 'on foot'], ['canoe', 'by canoe'], ['light', 'by light vehicle'], ['heavy', 'by heavy vehicle'], ['ship', 'by travelling boat'], ['change', 'changing in cities']]
             .filter(([k]) => o.by[k] > 0.05).map(([k, l]) => `${days(o.by[k])} ${l}`).join(' · ');
         let body;
         if (t.b === undefined) body = `<div class="dnd-trip-hint">From <b>${nm(t.a)}</b> — click a second city</div>`;
-        else if (t.loading) body = `<div class="dnd-trip-hint"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b> · working out the ways…</div>`;
+        else if (t.loading) body = `<div class="dnd-trip-hint"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b> · working out the ways… ${t.k ? `${t.k} of ${t.n}` : ''}</div>`;
         else {
-            const { boat, noBoat } = t.options;
-            const row = (o, cls, label) => (o ? `<div class="dnd-trip-row"><i class="dnd-trip-key ${cls}"></i><div><b>${label}: ${days(o.days)}</b><div class="dnd-trip-parts">${parts(o)}</div></div></div>` : `<div class="dnd-trip-row"><i class="dnd-trip-key ${cls}"></i><div><b>${label}</b>: no way</div></div>`);
+            const O = t.options;
+            const row = (key, label) => {
+                const o = O[key], on = t.shown === key;
+                return o ? `<button type="button" class="dnd-trip-way${on ? ' on' : ''}" data-way="${key}"><i class="dnd-way-dot ${key}"></i><span><b>${label}: ${days(o.days)}</b><span class="dnd-trip-parts">${parts(o)}</span></span></button>`
+                    : `<div class="dnd-trip-way none"><i class="dnd-way-dot ${key}"></i><span><b>${label}</b>: no way</span></div>`;
+            };
             body = `<div class="dnd-trip-head"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b></div>
-                ${boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? row(boat, 'boat', 'With a river boat') : ''}
-                ${row(noBoat, 'foot', boat?.usesBoat && boat.days < (noBoat?.days ?? Infinity) - 0.05 ? `Without a river boat${noBoat?.by.sea > 0.05 ? ' (by land and ship)' : ' (on foot)'}` : `Best way${noBoat?.by.sea > 0.05 ? ', by land and ship' : ', on foot'} (a river boat would not help)`)}`;
+                ${row('mix', 'Best, mixing them')}${row('foot', 'On foot')}${row('canoe', 'Canoe')}${row('light', 'Light vehicle')}${row('heavy', 'Heavy vehicle')}${row('ship', 'Travelling boat')}
+                <div class="dnd-trip-hint">Vehicles change only in a city. Click a way to see it on the map.</div>`;
         }
         el.innerHTML = `<button type="button" class="dnd-trip-x" aria-label="Close">×</button>${body}`;
     }
@@ -387,7 +400,8 @@ export class Realm {
         if (m.type === 'ready') return;
         if (m.type === 'progress') { if (m.id === this.reqId) window.dndProgress?.('realm', m.step, m.steps, m.label, m.frac); return; }
         if (m.type === 'link') { if (m.route && this.data) { this.data.routes.push(m.route); this.runsFor = null; this.status(`Route added: ${this.names.cities[m.route.a]} – ${this.names.cities[m.route.b]}, ${Math.round(m.route.days)} d`); this.changed(); } else this.status('No way between those two cities'); return; }
-        if (m.type === 'trip') { const t = this.trip; if (t && m.id === this.tripId && t.a === m.a && t.b === m.b) { t.options = m.options; t.loading = false; this.tripCard(); this.changed(false); } return; }
+        if (m.type === 'tripProgress') { const t = this.trip; if (t && m.id === this.tripId) { t.k = m.k; t.n = m.n; this.tripCard(); } return; }
+        if (m.type === 'trip') { const t = this.trip; if (t && m.id === this.tripId && t.a === m.a && t.b === m.b) { t.options = m.options; t.loading = false; t.shown = 'mix'; this.tripCard(); this.changed(false); } return; }
         if (m.id !== this.reqId) return;
         this.busy = false;
         window.dndProgress?.('realm', null);
@@ -701,7 +715,7 @@ export class Realm {
 
     // ── on screen: each city's mark and name, and each kingdom's name, at a constant size (composer.js's layer) ──
     /** The screen key's part for the realm (drawn again when it changes). */
-    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.a}-${this.trip.b}-${!!this.trip.options}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}`; }
+    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.a}-${this.trip.b}-${!!this.trip.options}-${this.trip.shown}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}`; }
     /** Draw on the composer's screen layer: `pr.at(u, v)` → client px or null, `line(pts)` a broken polyline, `placed` the
      *  labels' boxes already taken. */
     drawOnScreen(ctx, pr, line, placed) {
@@ -735,11 +749,19 @@ export class Realm {
         if (this.linkFrom !== undefined && d.cities[this.linkFrom]) { const q = pr.at(d.cities[this.linkFrom].u, d.cities[this.linkFrom].v); if (q) { ctx.setLineDash([3, 3]); ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(20,18,16,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 13, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]); } }
         // (the journey picked: its cities ringed, its two ways thick over everything else)
         if (this.trip) {
-            const t = this.trip, way = (o, col, dash) => {
-                if (!o) return;
-                ctx.setLineDash(dash); ctx.lineWidth = 3.5; ctx.strokeStyle = col; ctx.beginPath(); line(o.path); ctx.stroke(); ctx.setLineDash([]);
-            };
-            if (t.options) { way(t.options.noBoat, 'rgba(110,90,160,0.95)', [9, 5]); if (t.options.boat?.usesBoat && t.options.boat.days < (t.options.noBoat?.days ?? Infinity) - 0.05) way(t.options.boat, 'rgba(178,34,30,0.95)', []); }
+            const t = this.trip, o = t.options?.[t.shown];
+            if (o) {
+                // (each stretch in its way's colour: on foot dashed, the vehicles solid)
+                ctx.lineWidth = 4; ctx.lineCap = 'round';
+                let i0 = 0;
+                for (let i = 1; i <= o.layers.length; i++) {
+                    if (i < o.layers.length && o.layers[i] === o.layers[i0]) continue;
+                    const L = o.layers[i0], [col, dash] = WAY_STYLE[L];
+                    ctx.setLineDash(dash); ctx.strokeStyle = col; ctx.beginPath(); line(o.path.slice(i0, i + 1)); ctx.stroke();
+                    i0 = i;
+                }
+                ctx.setLineDash([]);
+            }
             for (const i of [t.a, t.b]) { const q = i === undefined ? null : pr.at(d.cities[i].u, d.cities[i].v); if (!q) continue; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 12, 0, 2 * Math.PI); ctx.stroke(); }
         }
         // (the names: the kingdoms' first, over their capitals, then the towns' by importance, none over another)

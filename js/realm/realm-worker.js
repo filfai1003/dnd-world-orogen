@@ -14,6 +14,11 @@ const WALK_KM_DAY = 30, RIVER_KM_DAY = 70, SAIL_KM_DAY = 120, LAKE_KM_DAY = 60;
 const NAV_Q = 400;           // a river this big (m³/s) carries boats
 const CROSS_Q = 150;         // a river this big must be bridged or forded
 const EMBARK_DAYS = 0.5;     // a port: boarding or landing
+// (D&D fork: a river boat — got where a navigable river is (built, bought), then carried along: downstream the current
+// helps, upstream it holds back; on land between rivers the boat is carried, and the going is slower; left anywhere)
+const BOAT_DAYS = 3;         // getting a boat at the river
+const BOAT_KM_DAY = 60;      // on still water; × (1 + 0.6 × the current along) — about 96 downstream, 24 upstream
+const PORTAGE = 2.5;         // walking with the boat: this many times slower
 
 self.onmessage = ({ data: msg }) => {
     try {
@@ -207,9 +212,6 @@ function stepCost(a, b, d, ex, ny, mode, port) {
         if (mode === 'reach') {
             cost *= 0.5 * (barrierFor(a) + barrierFor(b));
         }
-        if (mode === 'travel') {
-            if (g.riverQ[a] >= NAV_Q && g.riverQ[b] >= NAV_Q) { const boat = d / RIVER_KM_DAY; if (boat < cost) { cost = boat; g.stepMode = 1; } }
-        }
         return cost;
     }
     if (mode === 'reach') {
@@ -248,7 +250,67 @@ function stepCost(a, b, d, ex, ny, mode, port) {
  * each cell's cost (G.dist) and its source's label (G.lab, −1 unreached), its predecessor (G.from). `onSettle(c)` may
  * return true to stop.
  */
+/**
+ * The travellers' search (D&D fork): on foot (layer 0) or with a river boat (layer 1), node = cell + layer × n. G.dist,
+ * G.lab hold each cell's first-settled cost and source; G.node its node, G.tfrom the nodes' predecessors (for the trace).
+ */
+function searchTravel(sources, maxCost, port, onSettle) {
+    const g = G, { GW, GH, n } = g;
+    if (!g.tdist) { g.tdist = new Float32Array(2 * n); g.tfrom = new Int32Array(2 * n); g.tlab = new Int16Array(2 * n); g.theap = new Heap(2 * n); g.node = new Int32Array(n); }
+    const { tdist, tfrom, tlab, theap, dist, lab, node } = g;
+    tdist.fill(Infinity); tfrom.fill(-1); tlab.fill(-1); theap.clear(); dist.fill(Infinity); lab.fill(-1); node.fill(-1);
+    for (const [c, k0, l] of sources) if (k0 < tdist[c]) { tdist[c] = k0; tlab[c] = l; theap.push(c, k0); }
+    const relax = (v, u, nk) => { if (nk < tdist[u]) { tdist[u] = nk; tlab[u] = tlab[v]; tfrom[u] = v; theap.push(u, nk); } };
+    while (theap.size) {
+        const k = theap.keys[0], v = theap.pop();
+        if (k > tdist[v]) continue;
+        if (k > maxCost) break;
+        const boat = v >= n, c = boat ? v - n : v;
+        if (node[c] < 0) { node[c] = v; dist[c] = k; lab[c] = tlab[v]; if (onSettle && onSettle(c)) break; }
+        // (getting a boat, at a navigable river; leaving it, anywhere)
+        if (!boat && g.land[c] && g.riverQ[c] >= NAV_Q) relax(v, c + n, k + BOAT_DAYS);
+        if (boat) relax(v, c, k);
+        const y = (c / GW) | 0, x = c - y * GW;
+        for (const [dx, dy] of DIRS) {
+            const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+            const b = yy * GW + ((x + dx + GW) % GW);
+            const ddx = dx * 0.5 * (g.dxKm[y] + g.dxKm[yy]), ddy = dy * g.dyKm, d = Math.hypot(ddx, ddy), ex = ddx / d, ny = -ddy / d;
+            if (boat) {
+                if (!g.land[c] || !g.land[b]) continue;                     // (the boat keeps to the land's rivers)
+                let s;
+                if (g.riverQ[c] >= NAV_Q && g.riverQ[b] >= NAV_Q) {
+                    const fu = g.flowU[c] + g.flowU[b], fv = g.flowV[c] + g.flowV[b], fl = Math.hypot(fu, fv);
+                    const along = fl > 0 ? (fu * ex + fv * ny) / fl : 0;
+                    s = d / (BOAT_KM_DAY * Math.max(0.4, 1 + 0.6 * along));
+                } else s = stepCost(c, b, d, ex, ny, 'travel', port) * PORTAGE;
+                if (s >= 0) relax(v, b + n, k + s);
+            } else {
+                const s = stepCost(c, b, d, ex, ny, 'travel', port);
+                if (s >= 0) relax(v, b, k + s);
+            }
+        }
+    }
+}
+/** The trace of a traveller's way to cell `end` (after searchTravel): its cells and each step's way — 0 on foot (or carrying
+ *  the boat), 1 by river boat, 2 by sea or lake. */
+function traceTravel(end) {
+    const g = G, n = g.n, nodes = [];
+    for (let v = g.node[end]; v >= 0; v = g.tfrom[v]) nodes.push(v);
+    nodes.reverse();
+    const cells = [], modes = [];
+    for (let i = 0; i < nodes.length; i++) {
+        const v = nodes[i], c = v % n;
+        if (cells.length && cells[cells.length - 1] === c) continue;          // (a boat got or left: no step)
+        if (cells.length) {
+            const a = cells[cells.length - 1], boat = v >= n;
+            modes.push(!g.land[a] || !g.land[c] ? 2 : boat && g.riverQ[a] >= NAV_Q && g.riverQ[c] >= NAV_Q ? 1 : 0);
+        }
+        cells.push(c);
+    }
+    return { cells, modes };
+}
 function search(sources, mode, maxCost, port = null, onSettle = null) {
+    if (mode === 'travel') return searchTravel(sources, maxCost, port, onSettle);
     const g = G, { GW, GH, dist, lab, from, heap } = g;
     dist.fill(Infinity); lab.fill(-1); from.fill(-1); heap.clear();
     for (const [c, k0, l] of sources) { if (k0 < dist[c]) { dist[c] = k0; lab[c] = l; heap.push(c, k0); } }
@@ -723,17 +785,7 @@ function routes(cities) {
         for (const t of targets) {
             const end = cities[t].c;
             if (!(g.dist[end] < Infinity)) continue;
-            const cells = [], modes = [];
-            for (let c = end; c >= 0; c = g.from[c]) cells.push(c);
-            cells.reverse();
-            // (each step's way: by land, by river, or by water)
-            for (let i = 1; i < cells.length; i++) {
-                const a = cells[i - 1], b = cells[i], ya = (a / g.GW) | 0, yb = (b / g.GW) | 0;
-                let dxc = (b % g.GW) - (a % g.GW); if (dxc > 1) dxc -= g.GW; if (dxc < -1) dxc += g.GW;
-                const ddx = dxc * 0.5 * (g.dxKm[ya] + g.dxKm[yb]), ddy = (yb - ya) * g.dyKm, d = Math.hypot(ddx, ddy) || 1;
-                stepCost(a, b, d, ddx / d, -ddy / d, 'travel', port);
-                modes.push(g.stepMode);
-            }
+            const { cells, modes } = traceTravel(end);
             out.push({ a: s, b: t, days: g.dist[end], cells, modes });
         }
     }

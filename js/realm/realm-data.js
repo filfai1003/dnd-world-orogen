@@ -75,9 +75,23 @@ export function realmGrid(fin) {
 
     // ── the rivers: each cell its biggest discharge (m³/s) ──
     const Rv = fin.rivers;
-    if (Rv?.lat) for (let k = 0; k < Rv.lat.length; k++) {
-        const x = Math.min(GW - 1, Math.floor((Rv.lon[k] + 180) / 360 * GW)), y = Math.min(GH - 1, Math.max(0, Math.floor((90 - Rv.lat[k]) / 180 * GH))), c = y * GW + x;
-        if (Rv.q[k] > riverQ[c]) riverQ[c] = Rv.q[k];
+    const cellOf = (k) => Math.min(GH - 1, Math.max(0, Math.floor((90 - Rv.lat[k]) / 180 * GH))) * GW + Math.min(GW - 1, Math.floor((Rv.lon[k] + 180) / 360 * GW));
+    if (Rv?.lat) for (let k = 0; k < Rv.lat.length; k++) { const c = cellOf(k); if (Rv.q[k] > riverQ[c]) riverQ[c] = Rv.q[k]; }
+    // (D&D fork: which way each river runs — downstream, where its water grows — as a unit vector east, north per cell)
+    const flowU = new Float32Array(n), flowV = new Float32Array(n);
+    if (Rv?.lat && Rv.start) {
+        const S = Rv.start, N = Rv.lat.length;
+        for (let j = 0; j < S.length; j++) {
+            const a = S[j], b = (j + 1 < S.length ? S[j + 1] : N) - 1;
+            if (b <= a) continue;
+            const sign = Rv.q[b] >= Rv.q[a] ? 1 : -1;
+            for (let k = a; k < b; k++) {
+                let dl = Rv.lon[k + 1] - Rv.lon[k]; if (dl > 180) dl -= 360; if (dl < -180) dl += 360;
+                const e = dl * Math.cos(Rv.lat[k] * Math.PI / 180), nn = Rv.lat[k + 1] - Rv.lat[k], c = cellOf(k), w = Rv.q[k];
+                flowU[c] += sign * e * w; flowV[c] += sign * nn * w;
+            }
+        }
+        for (let c = 0; c < n; c++) { const l = Math.hypot(flowU[c], flowV[c]); if (l > 0) { flowU[c] /= l; flowV[c] /= l; } }
     }
 
     // ── the year's winds, currents and sea ice (the 1° climate: 360 × 180, rows from the north, columns from −180°) ──
@@ -104,7 +118,7 @@ export function realmGrid(fin) {
         }
         ores[m.id] = o;
     }
-    return { GW, GH, ores, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
+    return { GW, GH, ores, flowU, flowV, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
 }
 const KOPPEN_ID_EF = KOPPEN_CLASSES.findIndex(k => k.code === 'EF');
 /** The Köppen codes by index (the worker reads the letters). */

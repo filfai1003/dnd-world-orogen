@@ -16,9 +16,9 @@ const CROSS_Q = 150;         // a river this big must be bridged or forded
 const EMBARK_DAYS = 0.5;     // a port: boarding or landing
 // (D&D fork: a river boat — got where a navigable river is (built, bought), then carried along: downstream the current
 // helps, upstream it holds back; on land between rivers the boat is carried, and the going is slower; left anywhere)
-const BOAT_DAYS = 3;         // getting a boat at the river
-const BOAT_KM_DAY = 60;      // on still water; × (1 + 0.6 × the current along) — about 96 downstream, 24 upstream
-const PORTAGE = 2.5;         // walking with the boat: this many times slower
+const BOAT_DAYS = 2;         // getting a boat at the river
+const BOAT_KM_DAY = 75;      // on still water; × (1 + 0.5 × the current along) — about 110 downstream, 40 upstream
+const PORTAGE = 2.2;         // walking with the boat: this many times slower
 
 self.onmessage = ({ data: msg }) => {
     try {
@@ -293,7 +293,7 @@ function searchTravel(sources, maxCost, port, onSettle) {
                 if (g.riverQ[c] >= NAV_Q && g.riverQ[b] >= NAV_Q) {
                     const fu = g.flowU[c] + g.flowU[b], fv = g.flowV[c] + g.flowV[b], fl = Math.hypot(fu, fv);
                     const along = fl > 0 ? (fu * ex + fv * ny) / fl : 0;
-                    s = d / (BOAT_KM_DAY * Math.max(0.4, 1 + 0.6 * along));
+                    s = d / (BOAT_KM_DAY * Math.max(0.5, 1 + 0.5 * along));
                 } else s = stepCost(c, b, d, ex, ny, 'travel', port) * PORTAGE;
                 if (s >= 0) relax(v, b + n, k + s);
             } else {

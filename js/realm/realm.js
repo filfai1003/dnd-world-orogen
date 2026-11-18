@@ -567,7 +567,9 @@ export class Realm {
     }
     /** The legend's row of notable places (or ''). */
     markLegend() {
-        const d = this.data; if (!d || this.show.marks === false || !d.marks?.length) return '';
+        const d = this.data;
+        if (d?.holdMarks?.length && this.show.fills !== false) { const ks = [...new Set(d.holdMarks.map(h => h.kingdom))]; return `<div class="dnd-leg-note">◆ Sources held in another kingdom's land: ${ks.map(k => `${esc(this.names.kingdoms[k] ?? '')} (${(HOLD_NAMES[d.holdMarks.find(h => h.kingdom === k).id] ?? '').toLowerCase()})`).join(', ')}</div>`; }
+        if (!d || this.show.marks === false || !d.marks?.length) return '';
         const kinds = Object.keys(MARK_INFO).filter(k => d.marks.some(m => m.kind === k));
         return `<div class="dnd-leg-row">${kinds.map(k => `<span class="dnd-leg-mat"><img class="dnd-leg-icon" src="${markIcon(k)}" alt="">${MARK_INFO[k][0]}</span>`).join('')}</div>`;
     }
@@ -1086,6 +1088,12 @@ export class Realm {
             if (c.port) { ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.strokeStyle = 'rgba(25,45,95,0.95)'; ctx.stroke(); }
             if (dr && dr.i === i) { ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 2 * Math.PI); ctx.strokeStyle = 'rgba(158,43,37,0.9)'; ctx.lineWidth = 2; ctx.stroke(); }
             placed.push([x - r, y - r, x + r, y + r]);
+        }
+        // (the sources a kingdom holds in another's land: a small diamond in the holder's colour)
+        if (sh.fills !== false) for (const h of d.holdMarks || []) {
+            const q = pr.at(h.u, h.v); if (!inView(q)) continue;
+            ctx.beginPath(); ctx.moveTo(q[0], q[1] - 5); ctx.lineTo(q[0] + 4, q[1]); ctx.lineTo(q[0], q[1] + 5); ctx.lineTo(q[0] - 4, q[1]); ctx.closePath();
+            ctx.fillStyle = kcol(h.kingdom); ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.stroke();
         }
         // (the notable places: their marks, then — after the towns' names — their names, all or none)
         const marks = sh.marks !== false ? (d.marks || []).map(m => ({ m, q: pr.at(m.u, m.v) })).filter(o => inView(o.q)) : [];

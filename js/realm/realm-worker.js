@@ -544,21 +544,22 @@ function partition(capitals, bias) {
     // (a kingdom that holds a material's sources: each source its own, with the ground round it (~80 km) — mines held as
     // outposts, not a road to them. As a condition, every source; as a preference, those within a kingdom's breadth of its
     // capital — the far ones left to whoever holds the land)
-    const g = G, { GW, GH } = g;
+    // (D&D fork, later: held, not owned — the land stays its kingdom's, no patches cut out of it; the sources are marked on
+    // the map in the holder's colour instead: G.holdOwner, each source cell → the kingdom holding it, −1 none)
+    assignHolds(capitals);
+    return owner;
+}
+function assignHolds(capitals) {
+    const g = G;
+    g.holdOwner = new Int16Array(g.n).fill(-1);
     (g.prefs || []).forEach((p, k) => {
         if (!p || typeof p !== 'object' || !p.hold || k >= capitals.length) return;
         const must = !!p.req?.hold, reach = 1.2 * (g.D0 || 3000);
         for (const c of richCells(p.hold)) {
             if (!must && angKm(c, capitals[k]) > reach) continue;
-            const y = (c / GW) | 0, x = c - y * GW;
-            for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
-                const d = yy * GW + ((x + dx + GW) % GW);
-                if (g.land[d]) owner[d] = k;
-            }
+            g.holdOwner[c] = k;
         }
     });
-    return owner;
 }
 
 /** Every piece of land some kingdom's (D&D fork: no wild, no unclaimed island): the land beyond every capital's reach goes to
@@ -1604,11 +1605,28 @@ function sheetOf(owner, K, k, cities) {
     }
     return { neighbours, tempLo: q(T, 0.05), tempHi: q(T, 0.95), tempMid: q(T, 0.5), rainLo: q(P, 0.1), rainHi: q(P, 0.9), rainMid: q(P, 0.5), met };
 }
+/** The sources held by a kingdom that is not their land's (D&D fork): one mark a cluster (~700 km), ten at most, [{u, v, kingdom, id}]. */
+function holdMarksOf(owner) {
+    const g = G, H = g.holdOwner, out = [];
+    if (!H) return out;
+    (g.prefs || []).forEach((p, k) => {
+        if (!p || typeof p !== 'object' || !p.hold) return;
+        const got = [];
+        for (const c of richCells(p.hold)) {
+            if (H[c] !== k || owner[c] === k) continue;
+            if (got.length >= 10 || got.some(o => angKm(o, c) < 700)) continue;
+            got.push(c);
+        }
+        for (const c of got) out.push({ u: ((c % g.GW) + 0.5) / g.GW, v: (((c / g.GW) | 0) + 0.5) / g.GH, kingdom: k, id: p.hold });
+    });
+    return out;
+}
 function holdsOf(owner, k) {
     const out = {};
     for (const id of Object.keys(G.ores || {})) {
         const R = richCells(id); if (!R.length) continue;
-        let n = 0; for (const c of R) if (owner[c] === k) n++;
+        const H = G.holdOwner;
+        let n = 0; for (const c of R) if (H && H[c] >= 0 ? H[c] === k : owner[c] === k) n++;
         if (n) out[id] = n / R.length;
     }
     return out;
@@ -1653,6 +1671,7 @@ function finishRealm(cities, owner, K, extra = {}) {
         // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
         routes: R.map(routeOut),
         marks: [],
+        holdMarks: holdMarksOf(owner),
         ...extra,
     };
 }
@@ -1684,7 +1703,7 @@ function fixedRealm(list, ownerText = null) {
     let owner = ownerText ? unrle(ownerText, g.n) : null;
     if (owner) { const K = caps.length; for (let c = 0; c < g.n; c++) if (owner[c] >= K) owner[c] = -1; }
     if (!owner) owner = partition(caps, new Array(caps.length).fill(0));
-    else G.dist.fill(0);
+    else { G.dist.fill(0); assignHolds(caps); }
     const cities = pts.map((t, i) => ({ c: t.c, capital: t.capital, seat: !!list[i].seat, kingdom: t.capital ? caps.indexOf(t.c) : owner[t.c] }));
     // (a city outside every kingdom joins the nearest capital's)
     for (const t of cities) if (t.kingdom < 0) { let best = 0, bd = Infinity; caps.forEach((c, k) => { const d = angKm(c, t.c); if (d < bd) { bd = d; best = k; } }); t.kingdom = best; }

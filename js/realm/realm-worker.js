@@ -791,6 +791,34 @@ function joinBorders(owner, K, prefs) {
         }
     }
 }
+/** A kingdom given a size and still far too small: it takes, ring by ring outward from its frontier, the land of the
+ *  neighbours that are larger than they should be (or have no size of their own), until it is near its size. */
+function growToSize(owner, K, prefs) {
+    const g = G, { GW, GH } = g;
+    const A = new Float64Array(K);
+    for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c];
+    const At = A.reduce((t, v) => t + v, 0) / K, target = (k) => (SIZE[prefs[k]?.size] || 0) * At;
+    const order = [...Array(K).keys()].filter(k => target(k) && A[k] < 0.8 * target(k)).sort((a, b) => A[a] / target(a) - A[b] / target(b));
+    for (const k of order) {
+        const want = target(k), q = new Int32Array(g.n), seen = new Uint8Array(g.n); let qh = 0, qt = 0;
+        for (let c = 0; c < g.n; c++) if (owner[c] === k) { seen[c] = 1; q[qt++] = c; }
+        while (qh < qt && A[k] < 0.95 * want) {
+            const c = q[qh++], y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) {
+                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                const d = yy * GW + ((x + dx + GW) % GW);
+                if (seen[d] || !g.land[d] || cutAt(c, d)) continue;
+                seen[d] = 1;
+                const j = owner[d];
+                if (j < 0 || j === k) continue;
+                // (from a neighbour with room to spare: no size of its own, or still over its size once this is gone)
+                const tj = target(j);
+                if (tj && A[j] - g.area[d] < 0.9 * tj) continue;
+                owner[d] = k; A[k] += g.area[d]; A[j] -= g.area[d]; q[qt++] = d;
+            }
+        }
+    }
+}
 /** Kingdoms that must not touch, pulled apart: a strip (~3 cells) along their frontier given to a third kingdom that
  *  reaches it — a march between them. */
 function keepApart(owner, K, prefs) {
@@ -1218,6 +1246,7 @@ function grow(K, prefs = []) {
         for (let k = 0; k < K; k++) for (const b of relOf(prefs, k, 'apart')) if (b < K && b > k && FR[k * K + b]) { bias[k] = Math.min(20, bias[k] + 3); bias[b] = Math.min(20, bias[b] + 3); }
     }
     keepIslands(owner, K, prefs, caps);
+    growToSize(owner, K, prefs);
     trimToSize(owner, K, prefs);
     joinBorders(owner, K, prefs);
     { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c]; g.lastArea = A; }

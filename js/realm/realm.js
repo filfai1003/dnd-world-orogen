@@ -388,7 +388,7 @@ export class Realm {
         }
         const t = this.trip, nm = (i) => esc(this.names.cities[i] ?? '');
         const days = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} d`;
-        const parts = (o) => [['foot', 'on foot'], ['canoe', 'by canoe'], ['light', 'by light vehicle'], ['heavy', 'by heavy vehicle'], ['ship', 'by travelling boat'], ['change', 'changing in cities']]
+        const parts = (o) => [['foot', 'on foot'], ['carry', 'on foot carrying the canoe'], ['canoe', 'by canoe'], ['light', 'by light vehicle'], ['heavy', 'by heavy vehicle'], ['ship', 'by travelling boat'], ['change', 'getting or changing vehicles']]
             .filter(([k]) => o.by[k] > 0.05).map(([k, l]) => `${days(o.by[k])} ${l}`).join(' · ');
         const route = t.stops.map(nm).map(n => `<b>${n}</b>`).join(' → ');
         let body;
@@ -411,7 +411,7 @@ export class Realm {
             body = `<div class="dnd-trip-head">${route}</div>
                 ${row('mix', 'Best, mixing them')}${row('foot', 'On foot')}${row('canoe', 'Canoe')}${row('light', 'Light vehicle')}${row('heavy', 'Heavy vehicle')}${row('ship', 'Travelling boat')}
                 ${o ? `<div class="dnd-trip-hazards"><b>Dangers on the way shown</b> ${hz.length ? hz.join(' · ') : 'none to speak of'}</div>${legs}` : ''}
-                <div class="dnd-trip-hint">Vehicles change only in a city. Click a way to see it on the map. Shift + click a city to add a stop${t.stops.length > 2 ? ' · <button type="button" class="dnd-trip-undo">Remove the last stop</button>' : ''}.</div>`;
+                <div class="dnd-trip-hint">Vehicles change only in a city (a canoe can also be got at any shore or river, and left anywhere; the travelling boat only in a port). Click a way to see it on the map. Shift + click a city to add a stop${t.stops.length > 2 ? ' · <button type="button" class="dnd-trip-undo">Remove the last stop</button>' : ''}.</div>`;
         }
         el.innerHTML = `<button type="button" class="dnd-trip-x" aria-label="Close">×</button>${body}`;
     }

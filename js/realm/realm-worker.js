@@ -339,6 +339,7 @@ const CANOE_Q = 50;          // a river big enough to paddle (m³/s)
 const LIGHT_KM_DAY = 55;     // a light vehicle (a cart, riders): any road
 const HEAVY_KM_DAY = 75;     // a heavy vehicle (a coach with relays, a caravan): the main roads alone
 const SWITCH_DAYS = 0.5;     // in a city: a vehicle bought, sold or left
+const CANOE_GET_DAYS = 1;    // a canoe got (built, bought, hired) at the water's edge, away from a city; left anywhere, at no cost
 const SHIP_RIVER_Q = 1000;   // a river big enough for the travelling boat (m³/s)
 /** Can a traveller be in this layer on this cell? */
 function canBe(L, c) {
@@ -348,7 +349,9 @@ function canBe(L, c) {
         case CANOE: return true;
         case LIGHT: return !!g.roadAny?.[c];
         case HEAVY: return !!g.roadMain?.[c];
-        case SHIP: return !g.land[c] || g.riverQ[c] >= SHIP_RIVER_Q || !!g.harbour?.[c];
+        // (the travelling boat: at sea, on the great rivers and in the harbours of the port cities — a city with no
+        // port is never boarded nor reached by it)
+        case SHIP: return !g.land[c] || (!!g.harbour?.[c] || g.riverQ[c] >= SHIP_RIVER_Q) && !(g.cityCell?.[c] && !g.portCell?.[c]);
     }
     return false;
 }
@@ -405,7 +408,11 @@ function journey(a, b, allowed, startL = FOOT) {
         if (c === b) { end = v; break; }
         const relax = (u, nk) => { if (nk < mdist[u]) { mdist[u] = nk; mfrom[u] = v; mheap.push(u, nk); } };
         // (in a city: another way of travelling)
-        if (g.cityCell[c]) for (let L2 = 0; L2 < LAYERS; L2++) if (L2 !== L && ok[L2] && canBe(L2, c)) relax(c + L2 * n, k + SWITCH_DAYS);
+        if (g.cityCell[c]) for (let L2 = 0; L2 < LAYERS; L2++) if (L2 !== L && ok[L2] && canBe(L2, c) && (L2 !== SHIP || g.portCell?.[c])) relax(c + L2 * n, k + SWITCH_DAYS);
+        // (on foot at the water's edge — a shore, a lake, a river big enough — a canoe got there; and a canoe left on any
+        // land, to walk on: walking, then paddling, then walking again)
+        else if (L === FOOT && ok[CANOE] && (g.coast[c] || g.lakeside[c] || g.riverQ[c] >= CANOE_Q)) relax(c + CANOE * n, k + CANOE_GET_DAYS);
+        else if (L === CANOE && g.land[c]) relax(c, k);
         const y = (c / GW) | 0, x = c - y * GW;
         for (const [dx, dy] of DIRS) {
             const yy = y + dy; if (yy < 0 || yy >= GH) continue;
@@ -421,12 +428,14 @@ function journey(a, b, allowed, startL = FOOT) {
     for (let v = end; v >= 0; v = mfrom[v]) nodes.push(v);
     nodes.reverse();
     const KEYS = ['foot', 'canoe', 'light', 'heavy', 'ship'];
-    const by = { foot: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path = [], layers = [], H = hazardsNew();
+    const by = { foot: 0, carry: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path = [], layers = [], H = hazardsNew();
     let prev = -1;
     for (let i = 0; i < nodes.length; i++) {
         const v = nodes[i], L = (v / n) | 0, c = v - L * n, dt = i ? mdist[v] - mdist[nodes[i - 1]] : 0;
         if (i && nodes[i - 1] % n === c) { by.change += dt; continue; }
-        if (i) { by[KEYS[L]] += dt; layers.push(L); hazardStep(H, prev, c, dt); }
+        // (the canoe carried over land, off any river: walking with it)
+        const carried = L === CANOE && g.land[prev] && g.land[c] && !(g.riverQ[prev] >= CANOE_Q && g.riverQ[c] >= CANOE_Q);
+        if (i) { by[carried ? 'carry' : KEYS[L]] += dt; layers.push(L); hazardStep(H, prev, c, dt); }
         path.push([((c % GW) + 0.5) / GW, (((c / GW) | 0) + 0.5) / GH]);
         prev = c;
     }
@@ -473,7 +482,7 @@ function tripOptions(stops, done) {
     let k = 0;
     plans.forEach(([key, allowed], pi) => {
         // (leg by leg, each starting in the vehicle the last one ended in — it can be kept, or changed, in the city)
-        let all = { days: 0, by: { foot: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path: [], layers: [], legs: [], hazards: hazardsNew() }, L = FOOT;
+        let all = { days: 0, by: { foot: 0, carry: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path: [], layers: [], legs: [], hazards: hazardsNew() }, L = FOOT;
         for (let i = 0; i < legsN && all; i++) {
             const o = journey(stops[i], stops[i + 1], allowed, L);
             done?.(++k, total);
@@ -1735,7 +1744,8 @@ function routes(cities, pop = []) {
     }
     // (the routes kept for the vehicles: their land cells are the roads)
     g.cityCell = new Uint8Array(g.n); for (const t of cities) g.cityCell[t.c] = 1;
-    g.harbour = portMap(cities.map(t => t.c));
+    g.harbour = portMap(cities.filter(t => t.port).map(t => t.c));
+    g.portCell = new Uint8Array(g.n); for (const t of cities) if (t.port) g.portCell[t.c] = 1;
     g.routeList = out.map(r => ({ a: r.a, b: r.b, cells: r.cells, main: !!((cities[r.a].capital || cities[r.a].seat) && (cities[r.b].capital || cities[r.b].seat)) }));
     // (and the page's edits: the routes taken away, the routes added by hand)
     const E = g.edits;

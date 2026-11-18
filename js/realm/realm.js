@@ -160,7 +160,24 @@ export class Realm {
             if (moved || this.editing || !this.enabled || !this.data) return;
             this.pickCity(e);
         }, { capture: true });
-        addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.trip) this.clearTrip(); });
+        addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.trip) this.clearTrip(); if (e.key === 'Escape' && this.linkFrom !== undefined) { this.linkFrom = undefined; this.status(''); this.changed(false); } });
+        // (Ctrl + left click on a city: a route from it, to the next city Ctrl-clicked — before the plates' lasso sees it)
+        document.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0 || !(e.ctrlKey || e.metaKey) || !this.enabled || !this.data || this.busy || !this.onPlanet(e)) return;
+            const i = this.cityAtScreen(e.clientX, e.clientY); if (i < 0) return;
+            e.preventDefault(); e.stopImmediatePropagation();
+            if (this.linkFrom === undefined || this.linkFrom === i) { this.linkFrom = i; this.status(`Route from ${this.names.cities[i]}: Ctrl-click the city it goes to`); this.changed(false); return; }
+            const a = this.linkFrom; this.linkFrom = undefined;
+            this.addRoute(a, i);
+        }, { capture: true });
+        // (a right click, without a drag, on a route or a city: what can be taken away)
+        let rdown = null;
+        document.addEventListener('pointerdown', (e) => { rdown = e.button === 2 && !e.ctrlKey && this.onPlanet(e) ? [e.clientX, e.clientY] : null; }, { capture: true });
+        document.addEventListener('pointerup', (e) => {
+            if (!rdown || e.button !== 2) return;
+            const moved = Math.hypot(e.clientX - rdown[0], e.clientY - rdown[1]) > 5; rdown = null;
+            if (!moved && this.enabled && this.data) this.routeMenu(e);
+        }, { capture: true });
         // (Ctrl + right click on the land: a new city there — the kingdoms and routes worked out again round it)
         document.addEventListener('pointerdown', (e) => {
             if (e.button !== 2 || !e.ctrlKey || !this.enabled || !this.data || this.busy || !this.onPlanet(e)) return;
@@ -174,6 +191,71 @@ export class Realm {
         list.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input.realm-name')) e.target.blur(); });
     }
 
+    cityAtScreen(x, y) { let best = -1, bd = 14; this.screenPos.forEach((q, i) => { if (!q) return; const d = Math.hypot(q[0] - x, q[1] - y); if (d < bd) { bd = d; best = i; } }); return best; }
+    /** The route under a screen point (within ~8 px of its line), or −1. */
+    routeAtScreen(x, y) {
+        const pr = this.lastPr; if (!pr) return -1;
+        let best = -1, bd = 8;
+        this.data.routes.forEach((r, ri) => {
+            let prev = null;
+            for (const p of r.path) {
+                const q = pr.at(((p[0] % 1) + 1) % 1, p[1]); if (!q) { prev = null; continue; }
+                if (prev) {
+                    const dx = q[0] - prev[0], dy = q[1] - prev[1], l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - prev[0]) * dx + (y - prev[1]) * dy) / l2));
+                    const d = Math.hypot(prev[0] + t * dx - x, prev[1] + t * dy - y); if (d < bd) { bd = d; best = ri; }
+                }
+                prev = q;
+            }
+        });
+        return best;
+    }
+    /** The menu of a route or a city right-clicked: take the route away, or the city's routes by land. */
+    routeMenu(e) {
+        document.querySelector('.realm-menu')?.remove();
+        const ci = this.cityAtScreen(e.clientX, e.clientY), ri = ci < 0 ? this.routeAtScreen(e.clientX, e.clientY) : -1;
+        if (ci < 0 && ri < 0) return;
+        const d = this.data, nm = (i) => esc(this.names.cities[i] ?? '');
+        const byLand = (r) => !r.modes.includes(2);
+        const items = [];
+        if (ri >= 0) { const r = d.routes[ri]; items.push(['one', `Remove this route (${nm(r.a)} – ${nm(r.b)})`]); }
+        if (ci >= 0) {
+            const n = d.routes.filter(r => (r.a === ci || r.b === ci) && byLand(r)).length;
+            items.push(['land', n ? `Remove the land routes of ${nm(ci)} (${n})` : `${nm(ci)} has no land routes`]);
+        }
+        const box = document.createElement('div');
+        box.className = 'realm-menu';
+        box.innerHTML = items.map(([k, l]) => `<button type="button" data-k="${k}"${/has no/.test(l) ? ' disabled' : ''}>${l}</button>`).join('');
+        box.style.left = `${Math.min(innerWidth - 300, e.clientX + 6)}px`; box.style.top = `${Math.min(innerHeight - 100, e.clientY + 6)}px`;
+        document.body.appendChild(box);
+        const close = () => { box.remove(); removeEventListener('pointerdown', away, true); };
+        const away = (ev) => { if (!box.contains(ev.target)) close(); };
+        setTimeout(() => addEventListener('pointerdown', away, true), 0);
+        box.addEventListener('click', (ev) => {
+            const k = ev.target.closest('button')?.dataset.k; if (!k) return;
+            const gone = k === 'one' ? [d.routes[ri]] : d.routes.filter(r => (r.a === ci || r.b === ci) && byLand(r));
+            this.removeRoutes(gone);
+            close();
+        });
+    }
+    /** Routes taken away by hand (kept with the realm: a realm worked out again leaves them out too). */
+    removeRoutes(list) {
+        const E = this.names.routeEdits ||= { removed: [], added: [] };
+        for (const r of list) {
+            const i = this.data.routes.indexOf(r); if (i >= 0) this.data.routes.splice(i, 1);
+            E.removed.push([r.a, r.b]);
+            E.added = E.added.filter(([a, b]) => !((a === r.a && b === r.b) || (a === r.b && b === r.a)));
+        }
+        this.runsFor = null; this.changed(); this.save();
+    }
+    /** A route added by hand between two cities: the best way between them, on the roads as they are. */
+    addRoute(a, b) {
+        const d = this.data, E = this.names.routeEdits ||= { removed: [], added: [] };
+        E.added.push([a, b]);
+        E.removed = E.removed.filter(([x, y]) => !((x === a && y === b) || (x === b && y === a)));
+        this.status(`Tracing the route ${this.names.cities[a]} – ${this.names.cities[b]}…`);
+        this.worker.postMessage({ cmd: 'link', id: ++this.tripId, a, b, from: d.cities[a].c, to: d.cities[b].c, ports: d.cities.filter(c => c.port).map(c => c.c) });
+        this.save();
+    }
     /** A city picked: the first a journey's start, the second its end (a click off the cities: the journey cleared). */
     pickCity(e) {
         let best = -1, bd = 14;
@@ -276,7 +358,7 @@ export class Realm {
             this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES } });
             const kept = this.load();
             if (this.preset) { this.applyPreset(this.preset); this.auto(); }
-            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, cities: kept.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) }); }
+            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, edits: this.names.routeEdits, cities: kept.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) }); }
             else this.auto();
         }, 30);
     }
@@ -284,7 +366,7 @@ export class Realm {
         if (!this.world?.fin) return;
         // (the kingdoms keep their names, colours and climates; the cities are placed anew)
         const K = +$('sRealmK').value;
-        this.names.cities = [];
+        this.names.cities = []; this.names.routeEdits = null;
         this.fitNames(K);
         this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.prefs, mins: this.names.kingdoms.map((_, k) => Math.max(0, (this.names.towns?.[k]?.length || 0) - 1, (this.names.ncap?.[k] || 1) - 1)),
             ports: this.names.kingdoms.map((_, k) => (this.names.towns?.[k] || []).filter(t => t && typeof t === 'object' && t.port).length),
@@ -294,7 +376,7 @@ export class Realm {
     /** The realm again from the cities as they stand (moved, added, removed, a capital changed). */
     fixed() {
         if (!this.data) return;
-        this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, cities: this.data.cities.map((c, i) => ({ u: c.u, v: c.v, capital: c.capital, seat: !!this.names.seats?.[i] })) });
+        this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, edits: this.names.routeEdits, cities: this.data.cities.map((c, i) => ({ u: c.u, v: c.v, capital: c.capital, seat: !!this.names.seats?.[i] })) });
     }
     request(msg) {
         this.busy = true; msg.id = ++this.reqId;
@@ -304,6 +386,7 @@ export class Realm {
     received(m) {
         if (m.type === 'ready') return;
         if (m.type === 'progress') { if (m.id === this.reqId) window.dndProgress?.('realm', m.step, m.steps, m.label, m.frac); return; }
+        if (m.type === 'link') { if (m.route && this.data) { this.data.routes.push(m.route); this.runsFor = null; this.status(`Route added: ${this.names.cities[m.route.a]} – ${this.names.cities[m.route.b]}, ${Math.round(m.route.days)} d`); this.changed(); } else this.status('No way between those two cities'); return; }
         if (m.type === 'trip') { const t = this.trip; if (t && m.id === this.tripId && t.a === m.a && t.b === m.b) { t.options = m.options; t.loading = false; this.tripCard(); this.changed(false); } return; }
         if (m.id !== this.reqId) return;
         this.busy = false;
@@ -618,10 +701,11 @@ export class Realm {
 
     // ── on screen: each city's mark and name, and each kingdom's name, at a constant size (composer.js's layer) ──
     /** The screen key's part for the realm (drawn again when it changes). */
-    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.trip ? `${this.trip.a}-${this.trip.b}-${!!this.trip.options}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}`; }
+    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.a}-${this.trip.b}-${!!this.trip.options}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}`; }
     /** Draw on the composer's screen layer: `pr.at(u, v)` → client px or null, `line(pts)` a broken polyline, `placed` the
      *  labels' boxes already taken. */
     drawOnScreen(ctx, pr, line, placed) {
+        this.lastPr = pr;
         this.screenPos = [];
         this.labelBoxes = [];
         if (!this.enabled || !this.data) return;
@@ -648,6 +732,7 @@ export class Realm {
             }
             ctx.setLineDash([]);
         }
+        if (this.linkFrom !== undefined && d.cities[this.linkFrom]) { const q = pr.at(d.cities[this.linkFrom].u, d.cities[this.linkFrom].v); if (q) { ctx.setLineDash([3, 3]); ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(20,18,16,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 13, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]); } }
         // (the journey picked: its cities ringed, its two ways thick over everything else)
         if (this.trip) {
             const t = this.trip, way = (o, col, dash) => {

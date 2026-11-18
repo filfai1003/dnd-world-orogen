@@ -25,7 +25,8 @@ self.onmessage = ({ data: msg }) => {
         if (msg.cmd === 'init') { G = prepare(msg.grid); self.postMessage({ type: 'ready' }); return; }
         if (!G) throw new Error('no world');
         const t0 = performance.now();
-        G.reqId = msg.id; G.ncap = msg.ncap || []; G.keepPorts = msg.keepPorts || []; G.seatsIn = msg.seats || null;
+        G.reqId = msg.id; G.ncap = msg.ncap || []; G.keepPorts = msg.keepPorts || []; G.seatsIn = msg.seats || null; G.edits = msg.edits || null;
+        if (msg.cmd === 'link') { self.postMessage({ type: 'link', id: msg.id, route: linkRoute(msg.a, msg.b, msg.from, msg.to, msg.ports || []) }); return; }
         if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, a: msg.a, b: msg.b, options: tripOptions(msg.from, msg.to, msg.ports || []) }); return; }
         if (msg.cmd === 'fixed') { say(1); G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
         const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
@@ -297,6 +298,7 @@ function searchTravel(sources, maxCost, port, onSettle) {
                 } else s = stepCost(c, b, d, ex, ny, 'travel', port) * PORTAGE;
                 if (s >= 0) relax(v, b + n, k + s);
             } else {
+                if (g.landOnly && !g.land[b]) continue;                     // (by land alone)
                 const s = stepCost(c, b, d, ex, ny, 'travel', port);
                 if (s >= 0) relax(v, b, k + s);
             }
@@ -966,6 +968,28 @@ function routes(cities, pop = []) {
             out.push({ a: s, b: t, days: g.dist[end], cells, modes });
         }
     }
+    // (D&D fork: every city at least one way on foot — by land alone, to the nearest city it can walk to)
+    const onFoot = new Uint8Array(cities.length);
+    for (const r of out) if (!r.modes.includes(2)) { onFoot[r.a] = 1; onFoot[r.b] = 1; }
+    for (let a = 0; a < cities.length; a++) {
+        if (onFoot[a]) continue;
+        g.landOnly = true;
+        let hit = -1;
+        searchTravel([[cities[a].c, 0, a]], Infinity, port, (c) => { const b = at.get(c); if (b !== undefined && b !== a) { hit = b; return true; } return false; });
+        if (hit >= 0) { const { cells, modes } = traceTravel(cities[hit].c); out.push({ a, b: hit, days: g.dist[cities[hit].c], cells, modes }); onFoot[a] = onFoot[hit] = 1; }
+        g.landOnly = false;
+    }
+    // (and the page's edits: the routes taken away, the routes added by hand)
+    const E = g.edits;
+    if (E) {
+        const gone = new Set((E.removed || []).map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
+        for (let i = out.length - 1; i >= 0; i--) { const r = out[i]; if (gone.has(r.a < r.b ? `${r.a}-${r.b}` : `${r.b}-${r.a}`)) out.splice(i, 1); }
+        for (const [a, b] of E.added || []) {
+            if (!cities[a] || !cities[b]) continue;
+            searchTravel([[cities[a].c, 0, a]], Infinity, port, (c) => c === cities[b].c);
+            if (g.dist[cities[b].c] < Infinity) { const { cells, modes } = traceTravel(cities[b].c); out.push({ a, b, days: g.dist[cities[b].c], cells, modes, hand: true }); }
+        }
+    }
     return out;
 }
 
@@ -978,6 +1002,22 @@ function holdsOf(owner, k) {
         if (n) out[id] = n / R.length;
     }
     return out;
+}
+
+/** A traced route as the page takes it: its ends, days, way on the map ([u, v]), each step's way and the current. */
+function routeOut(r) {
+    const g = G;
+    return { a: r.a, b: r.b, days: r.days, hand: !!r.hand, path: r.cells.map(c => [((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]), modes: r.modes,
+        cur: r.cells.map(c => (g.land[c] || g.lake[c] ? null : [+g.curU[c].toFixed(3), +g.curV[c].toFixed(3)])) };
+}
+/** A route added by hand (D&D fork): the best way between two cities, on the roads as they are. */
+function linkRoute(a, b, from, to, ports) {
+    const g = G, port = new Uint8Array(g.n);
+    for (const c of ports) port[c] = 1;
+    searchTravel([[from, 0, a]], Infinity, port, (c) => c === to);
+    if (!(g.dist[to] < Infinity)) return null;
+    const { cells, modes } = traceTravel(to);
+    return routeOut({ a, b, days: g.dist[to], cells, modes, hand: true });
 }
 
 // ── the whole realm ──
@@ -993,8 +1033,7 @@ function finishRealm(cities, owner, K, extra = {}) {
             river: g.riverQ[t.c] >= CROSS_Q, heightM: Math.round(g.heightM[t.c]), koppen: g.codes[g.koppen[t.c]] })),
         kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0, holds: holdsOf(owner, i) })),
         // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
-        routes: R.map(r => ({ a: r.a, b: r.b, days: r.days, path: r.cells.map(c => [((c % g.GW) + 0.5) / g.GW, (((c / g.GW) | 0) + 0.5) / g.GH]), modes: r.modes,
-            cur: r.cells.map(c => (g.land[c] || g.lake[c] ? null : [+g.curU[c].toFixed(3), +g.curV[c].toFixed(3)])) })),
+        routes: R.map(routeOut),
         ...extra,
     };
 }

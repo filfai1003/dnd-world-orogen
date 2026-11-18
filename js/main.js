@@ -98,7 +98,7 @@ startWorker();
 /** The sliders, as the worker reads them. */
 function sliders() {
     const v = (id) => +$(id).value;
-    return { maxLat: 90, N: detailFromSlider(v('sN')), P: v('sP'), jitter: v('sJ'), nMag: v('sNs'), numContinents: v('sCn'), terrainWarp: v('sTw'), smoothing: v('sS'),
+    return { maxLat: 90, flat: !!$('chkFlat')?.checked, N: detailFromSlider(v('sN')), P: v('sP'), jitter: v('sJ'), nMag: v('sNs'), numContinents: v('sCn'), terrainWarp: v('sTw'), smoothing: v('sS'),
         hydraulicErosion: v('sHEr'), thermalErosion: v('sTEr'), ridgeSharpening: v('sRs'), glacialErosion: v('sGl'), continentSizeVariety: v('sCsv'),
         greenhouse: v('sTmp'), precipitationOffset: v('sPrc'), landCoverage: v('sLc') };
 }
@@ -127,7 +127,7 @@ function received(msg) {
     const old = world;
     const kind = msg.type, w = {
         version: ++version, seed: msg.seed ?? old?.seed, tMesh: meshFromArrays(sh.mesh), meshArrays: sh.mesh, heightKm: sh.heightKm, shade: sh.shade,
-        story: sh.story, regionCell: sh.regionCell, finishJob: sh.finish, fin: null, finishing: null, problem: null,
+        story: sh.story, regionCell: sh.regionCell, finishJob: sh.finish, fin: null, finishing: null, problem: null, seamLon: sh.finish?.surface?.seamLon ?? null,
         present: msg.present ?? old?.present, inspect: msg.debugLayers ?? old?.inspect,
         // (the pieces and their land as edited, and as first built — the planet code's toggles are the difference)
         r_plate: msg.r_plate ?? old.r_plate, plateSeeds: msg.plateSeeds ?? old.plateSeeds,
@@ -136,6 +136,7 @@ function received(msg) {
     };
     if (kind === 'editDone' && old) { w.seed = old.seed; w.plateIsOcean = old.plateIsOcean; w.originalPlateIsOcean = old.originalPlateIsOcean; }
     world = w; building = null; dirty = true; hoveredPiece = -1;
+    flatView(w);
     pv.forget();                                         // (the old world's finished moment let go)
     if (pv.gpu) pv.gpu.setMesh(w.tMesh);
     resetBuildButton();
@@ -375,12 +376,26 @@ $('editToggle')?.addEventListener('click', () => { state.editMode = !state.editM
 const sliderIds = ['sN', 'sP', 'sCn', 'sJ', 'sNs', 'sCsv', 'sLc'], PLATE_SLIDERS = ['sP', 'sCn', 'sCsv', 'sLc'], SCULPT = ['sTw', 'sS', 'sGl', 'sHEr', 'sTEr', 'sRs'];
 let lastGenValues = {};
 let worldReplay = false;                 // (D&D fork: a world made again by undo or redo — not a new entry)
-function snapshotSliders() { for (const id of sliderIds) lastGenValues[id] = $(id).value; }
+function snapshotSliders() { for (const id of sliderIds) lastGenValues[id] = $(id).value; lastGenValues.flat = !!$('chkFlat')?.checked; }
+/** D&D fork: a flat world shown flat — the map, equirectangular, centred so its seam runs along the map's edges, not to be
+ *  turned; a round world as before. */
+function flatView(w) {
+    const flat = w.seamLon !== null && w.seamLon !== undefined;
+    document.body.classList.toggle('flat-world', flat);
+    const slider = $('sMapCenterLon'), num = $('dndCenterNum');
+    slider.disabled = flat; if (num) num.disabled = flat;
+    if (!flat) return;
+    const c = Math.round(((w.seamLon + 360) % 360) - 180);
+    slider.value = String(c); slider.dispatchEvent(new Event('input')); if (num) num.value = String(c);
+    const mode = $('viewMode'); if (mode && mode.value !== 'map') { mode.value = 'map'; mode.dispatchEvent(new Event('change', { bubbles: true })); }
+    const sel = $('mapProjection'); if (sel && sel.value !== 'equirect') { sel.value = 'equirect'; sel.dispatchEvent(new Event('change')); }
+}
+$('chkFlat')?.addEventListener('change', () => checkStale());
 function checkStale() {
     const btn = $('generate');
     if (btn.classList.contains('generating')) return;
     const plateChanged = PLATE_SLIDERS.some((id) => $(id).value !== lastGenValues[id]);
-    const detailChanged = ['sN', 'sJ', 'sNs'].some((id) => $(id).value !== lastGenValues[id]);
+    const detailChanged = ['sN', 'sJ', 'sNs'].some((id) => $(id).value !== lastGenValues[id]) || (!!$('chkFlat')?.checked !== !!lastGenValues.flat && 'flat' in lastGenValues);
     btn.classList.remove('stale', 'regen');
     if (plateChanged) { btn.classList.add('regen'); btn.textContent = 'Regenerate'; }
     else if (detailChanged) { btn.classList.add('stale'); btn.textContent = 'Rebuild'; }
@@ -438,7 +453,9 @@ function updatePlanetCode(flash) {
     if (!world) return;
     const v = (id) => +$(id).value;
     const P = v('sP'), Cn = v('sCn'), wide = P > 120 || Cn > 10;
-    currentCode = encodePlanetCode(world.seed, detailFromSlider(v('sN')), v('sJ'), Math.min(120, P), Math.min(10, Cn), v('sNs'), v('sTw'), v('sS'), v('sGl'), v('sHEr'), v('sTEr'), v('sRs'), 0.75, v('sCsv'), v('sTmp'), v('sPrc'), v('sLc'), toggledIndices()) + (wide ? `~p${P}c${Cn}` : '');
+    currentCode = encodePlanetCode(world.seed, detailFromSlider(v('sN')), v('sJ'), Math.min(120, P), Math.min(10, Cn), v('sNs'), v('sTw'), v('sS'), v('sGl'), v('sHEr'), v('sTEr'), v('sRs'), 0.75, v('sCsv'), v('sTmp'), v('sPrc'), v('sLc'), toggledIndices());
+    const extra = (wide ? `p${P}c${Cn}` : '') + ($('chkFlat')?.checked && world.seamLon !== null ? 'f' : '');
+    if (extra) currentCode += `~${extra}`;
     seedInput.value = currentCode;
     loadBtn.classList.toggle('ready', false);
     history.replaceState(null, '', `${location.search}#${currentCode}`);
@@ -453,13 +470,15 @@ function setSlidersFrom(params) {
     const map = { sN: sliderFromDetail(params.N), sJ: params.jitter, sP: params.P, sCn: params.numContinents, sNs: params.roughness, sCsv: params.continentSizeVariety, sLc: params.landCoverage,
         sTw: params.terrainWarp, sS: params.smoothing, sGl: params.glacialErosion, sHEr: params.hydraulicErosion, sTEr: params.thermalErosion, sRs: params.ridgeSharpening, sTmp: params.greenhouse, sPrc: params.precipitationOffset };
     for (const [id, val] of Object.entries(map)) { const el = $(id); if (+val > +el.max) el.max = String(val); el.value = val; el.dispatchEvent(new Event('input')); }
+    if ($('chkFlat')) $('chkFlat').checked = !!params.flat;
 }
 /** A planet code, with the fork's suffix for plates and continents past the code's range (~p<plates>c<continents>). */
 function decodeCode(code) {
     const [base, extra] = String(code).trim().split('~');
     const params = decodePlanetCode(base);
-    const m = params && extra ? /^p(\d+)c(\d+)$/.exec(extra) : null;
-    if (m) { params.P = +m[1]; params.numContinents = +m[2]; }
+    const m = params && extra ? /^(?:p(\d+)c(\d+))?(f)?$/.exec(extra) : null;
+    if (m?.[1]) { params.P = +m[1]; params.numContinents = +m[2]; }
+    if (params) params.flat = !!m?.[3];
     return params;
 }
 function applyCode(code) {

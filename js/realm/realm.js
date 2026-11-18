@@ -160,6 +160,7 @@ export class Realm {
     /** The map's centre turned to the land (a new world's continents in the middle of the map). */
     centreOnLand() {
         const o = this.data?.owner; if (!o) return;
+        if (document.body.classList.contains('flat-world')) return;     // (a flat world: centred on its seam's far side, fixed)
         let sx = 0, sy = 0;
         for (let c = 0; c < o.length; c++) if (o[c] >= 0) { const a = ((c % GW) + 0.5) / GW * 2 * Math.PI - Math.PI; sx += Math.cos(a); sy += Math.sin(a); }
         if (!sx && !sy) return;
@@ -601,7 +602,7 @@ export class Realm {
             if (this.world !== w) return;
             let grid;
             try { grid = realmGrid(w.fin); } catch (err) { console.error(err); this.status(`Could not read the planet: ${err.message}`); return; }
-            this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES } });
+            this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES, seamLon: w.seamLon ?? null } });
             const kept = this.load();
             if (this.preset) { this.applyPreset(this.preset); this.auto(); }
             else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, edits: this.names.routeEdits, owner: kept.owner || null, cities: kept.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) }); }

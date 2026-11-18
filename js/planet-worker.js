@@ -127,8 +127,8 @@ function sharedPayload(present, mesh, r_xyz, seed) {
     const s = w.surface, surface = { heightKm: copy(s.heightKm), recCell: copy(s.recCell), cues: copy(s.cues), carveIn: Object.fromEntries(Object.entries(s.carveIn).map(([k, a]) => [k, copy(a)])) };
     // (the land kept off the poles: the picture's heights and the finish's)
     const hk = copy(w.heightKm);
-    sinkPoles(tm.xyz, hk, surface.heightKm);
-    surface.maxLat = MAX_LAT;
+    const seam = sinkPoles(tm.xyz, hk, surface.heightKm);
+    surface.maxLat = FLAT ? Math.min(MAX_LAT, 60) : MAX_LAT; surface.seamLon = seam;
     const payload = {
         mesh: { numCells: tm.numCells, xyz: copy(tm.xyz), adjOffset: copy(tm.adjOffset), adjList: copy(tm.adjList) },
         heightKm: hk, shade: copy(w.shade), story, regionCell: copy(present.regionCell),
@@ -264,20 +264,43 @@ function importGround(data, again = false) {
 }
 
 // (D&D fork: no land beyond this latitude, north or south — the land there sunk below the sea, the coast eased in over a
-// few degrees; 90 is no limit. Set by every message that carries it.)
-let MAX_LAT = 90;
+// few degrees; 90 is no limit. Set by every message that carries it. A flat world (FLAT): the band within 60° only, and a
+// seam — the meridian with the least land — sunk into a strip of sea, so the map's east and west edges meet nothing.)
+let MAX_LAT = 90, FLAT = false;
+const SEAM_HALF = 7;                     // (the seam's sea: this many degrees each side of it, eased in over the outer 4)
+/** The land sunk beyond the latitude limit, and for a flat world along its seam. Returns the seam's longitude (or null). */
 function sinkPoles(xyz, ...fields) {
-    if (!(MAX_LAT < 90)) return;
-    const n = fields[0].length;
+    const L = FLAT ? Math.min(MAX_LAT, 60) : MAX_LAT;
+    if (!(L < 90) && !FLAT) return null;
+    const n = fields[0].length, deg = 180 / Math.PI;
+    const latOf = (r) => Math.abs(Math.asin(Math.max(-1, Math.min(1, xyz[3 * r + 2])))) * deg;   // (the terrain mesh: z north)
+    const lonOf = (r) => Math.atan2(xyz[3 * r + 1], xyz[3 * r]) * deg;
+    let seam = null;
+    if (FLAT) {
+        // (the meridian crossing the least land within the band: land counted in 2° strips, summed over ±8°)
+        const bins = new Float64Array(180);
+        for (let r = 0; r < n; r++) if (fields[0][r] > 0 && latOf(r) < L) bins[Math.min(179, Math.floor((lonOf(r) + 180) / 2))]++;
+        let best = 0, bv = Infinity;
+        for (let i = 0; i < 180; i++) { let v = 0; for (let j = -4; j <= 4; j++) v += bins[(i + j + 180) % 180]; if (v < bv) { bv = v; best = i; } }
+        seam = best * 2 + 1 - 180;
+    }
     for (let r = 0; r < n; r++) {
-        const lat = Math.abs(Math.asin(Math.max(-1, Math.min(1, xyz[3 * r + 2])))) * 180 / Math.PI;   // (the terrain mesh: z north)
-        if (lat < MAX_LAT - 4) continue;
-        const f = Math.min(1, (lat - (MAX_LAT - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - MAX_LAT);
+        const lat = latOf(r);
+        // (a flat world's edge north and south wanders a few degrees with the longitude, not a ruler's line)
+        const LON = lonOf(r) * Math.PI / 180, Le = FLAT ? (L - 2.5 + 2.5 * (0.55 * Math.sin(3 * LON + 0.7) + 0.3 * Math.sin(7 * LON + 2.1) + 0.15 * Math.sin(13 * LON + 4.2))) : L;
+        let f = lat < Le - 4 ? 0 : Math.min(1, (lat - (Le - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - Le);
+        if (seam !== null) {
+            let d = Math.abs(lonOf(r) - seam); if (d > 180) d = 360 - d;
+            if (d < SEAM_HALF) { const g = Math.min(1, (SEAM_HALF - d) / 4); if (g > f) { f = g; sea = -0.25 - 0.08 * Math.max(0, SEAM_HALF - 4 - d); } }
+        }
+        if (!(f > 0)) continue;
         for (const h of fields) if (h[r] > sea) h[r] = h[r] * (1 - f) + sea * f;
     }
+    return seam;
 }
 self.onmessage = (e) => {
     if (e.data.maxLat !== undefined) MAX_LAT = +e.data.maxLat || 90;
+    if (e.data.flat !== undefined) FLAT = !!e.data.flat;
     const handlers = { generate: handleGenerate, reapply: handleReapply, editRecompute: handleEditRecompute, importHeightmap: (d) => importGround(d) };
     const run = handlers[e.data.cmd];
     if (!run) { self.postMessage({ type: 'error', message: `Unknown command: ${e.data.cmd}` }); return; }

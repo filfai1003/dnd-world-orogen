@@ -457,7 +457,7 @@ export class Composer {
         let drag = null;
         document.addEventListener('pointerdown', (e) => {
             const view = this.pv.view, mv = this.pv.globe.mapView;
-            if (view.mode !== 'map' || e.target !== this.pv.ui.map || e.ctrlKey || e.metaKey || this.realm.editing) return;
+            if (view.mode !== 'map' || e.target !== this.pv.ui.map || e.ctrlKey || e.metaKey || this.realm.editing || document.body.classList.contains('flat-world')) return;
             // (a mouse's right button turns the map — its left pans and picks cities; a finger turns it only zoomed out)
             if (e.pointerType === 'mouse' ? e.button !== 2 : (e.button !== 0 || (mv && mv.zoom > 1.02))) return;
             drag = { x: e.clientX, lon: +slider.value, w: this.pv.globe.mapBox().width };

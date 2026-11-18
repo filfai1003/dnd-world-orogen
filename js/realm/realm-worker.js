@@ -160,7 +160,8 @@ function prepare(g) {
         if (code === 'EF') bCold[c] = 8; else if (code === 'ET') bCold[c] = 2.5; else if (/^D.[cd]$/.test(code)) bCold[c] = 1.3;
         if (bMt[c] === 1 && bDes[c] <= 1.4 && bCold[c] <= 1.3) { if (g.people[c] < 0.05) bBare[c] = 3; else if (g.people[c] < 0.5) bBare[c] = 1.6; }
     }
-    return { ...g, n, xyz, dxKm, dyKm, area, walk, food, ice, coast, bMt, bDes, bCold, bBare, adapt: [], lakeside, landDist, site, comp, compArea, heap: new Heap(n), dist: new Float32Array(n), from: new Int32Array(n), lab: new Int16Array(n) };
+    const seamCol = g.seamLon === null || g.seamLon === undefined ? -1 : Math.round((g.seamLon + 180) / 360 * GW) % GW;
+    return { ...g, seamCol, n, xyz, dxKm, dyKm, area, walk, food, ice, coast, bMt, bDes, bCold, bBare, adapt: [], lakeside, landDist, site, comp, compArea, heap: new Heap(n), dist: new Float32Array(n), from: new Int32Array(n), lab: new Int16Array(n) };
 }
 
 /** A box blur of `f` over `r` cells each way (wrapping east–west). */
@@ -205,6 +206,8 @@ class Heap {
     }
 }
 
+/** A flat world's seam (D&D fork): no step from one side of it to the other — the map's east and west edges never meet. */
+const cutAt = (a, b) => { const s = G.seamCol; if (s === undefined || s < 0) return false; const xa = a % G.GW, xb = b % G.GW, s1 = (s - 1 + G.GW) % G.GW; return (xa === s1 && xb === s) || (xa === s && xb === s1); };
 const angKm = (a, b) => { const X = G.xyz, d = X[3 * a] * X[3 * b] + X[3 * a + 1] * X[3 * b + 1] + X[3 * a + 2] * X[3 * b + 2]; return R_KM * Math.acos(Math.max(-1, Math.min(1, d))); };
 
 /**
@@ -233,6 +236,7 @@ function adaptOf(prefs) {
     });
 }
 function stepCost(a, b, d, ex, ny, mode, port) {
+    if (cutAt(a, b)) return -1;
     const g = G, la = g.land[a], lb = g.land[b];
     if (la && lb) {
         let cost = d * 0.5 * (g.walk[a] + g.walk[b]) * (1 + 25 * Math.abs(g.heightM[b] - g.heightM[a]) / (d * 1000));
@@ -349,6 +353,7 @@ function canBe(L, c) {
 }
 /** The days of a step from a to b (d km, along (ex, ny)) in a layer, or −1. */
 function layerStep(L, a, b, d, ex, ny) {
+    if (cutAt(a, b)) return -1;
     const g = G, la = g.land[a], lb = g.land[b];
     const slope = (1 + 10 * Math.abs(g.heightM[b] - g.heightM[a]) / (d * 1000));
     if (L === FOOT) return la && lb ? stepCost(a, b, d, ex, ny, 'travel', null) : -1;
@@ -568,7 +573,7 @@ function claimAll(owner) {
         for (const [dx, dy] of DIRS) {
             const yy = y + dy; if (yy < 0 || yy >= GH) continue;
             const d = yy * GW + ((x + dx + GW) % GW);
-            if (lab[d] < 0) { lab[d] = lab[c]; queue[qt++] = d; }
+            if (lab[d] < 0 && !cutAt(c, d)) { lab[d] = lab[c]; queue[qt++] = d; }
         }
     }
     for (let c = 0; c < g.n; c++) if (g.land[c] && owner[c] < 0) owner[c] = lab[c];
@@ -745,7 +750,7 @@ function keepIslands(owner, K, prefs, caps) {
         for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && owner[c] !== k) { lab[c] = owner[c]; q[qt++] = c; }
         while (qh < qt) {
             const c = q[qh++], y = (c / GW) | 0, x = c - y * GW;
-            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (lab[d] < 0 && !(g.land[d] && g.comp[d] === home)) { lab[d] = lab[c]; q[qt++] = d; } }
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (lab[d] < 0 && !cutAt(c, d) && !(g.land[d] && g.comp[d] === home)) { lab[d] = lab[c]; q[qt++] = d; } }
         }
         for (let c = 0; c < g.n; c++) if (g.land[c] && owner[c] < 0) owner[c] = lab[c];
     }
@@ -866,7 +871,8 @@ function hopsFields() {
     {
         let mx = 0, my = 0; const cells = [];
         for (let c = 0; c < g.n; c++) if (g.land[c] && !g.ice[c]) { cells.push(c); mx += g.xyz[3 * c] * g.area[c]; my += g.xyz[3 * c + 1] * g.area[c]; }
-        const lon0 = Math.atan2(my, mx), lat = new Float32Array(g.n), lon = new Float32Array(g.n);
+        // (a flat world: east and west as its map has them — about the map's middle, the seam at its edges)
+        const lon0 = g.seamCol >= 0 ? (g.seamLon + 180) * Math.PI / 180 : Math.atan2(my, mx), lat = new Float32Array(g.n), lon = new Float32Array(g.n);
         for (const c of cells) {
             lat[c] = g.xyz[3 * c + 2];
             let d = Math.atan2(g.xyz[3 * c + 1], g.xyz[3 * c]) - lon0;

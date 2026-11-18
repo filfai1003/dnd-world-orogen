@@ -91,7 +91,7 @@ export async function finishPlanet({ frame, simMesh, seed, cells, pool = null, c
     let meanderV = null;
     if (n <= PREP_CELLS) { prepareCarve(ladder, broad ? [[broad, mesh]] : []); meanderV = meanderValues(mesh, seed, F, fade); }
     let surf = await surfJob;
-    const maxLat = surf?.maxLat ?? 90;                                // (D&D fork: kept, the surface let go below)
+    const maxLat = surf?.maxLat ?? 90, seamLon = surf?.seamLon ?? null; // (D&D fork: kept, the surface let go below)
     if (closePool) pool?.terminate();                                 // (its workers' memory back before the heavy stages)
     if (warped) pool?.forget?.(warped);
     let carveIn = surf.carveIn;
@@ -254,13 +254,18 @@ export async function finishPlanet({ frame, simMesh, seed, cells, pool = null, c
     onStage('sea');
     // (D&D fork: a page's latitude limit on the land — surface.maxLat — kept to the end: beyond it, the sea, whatever
     // the carving, the sediment or the ice did there)
-    if (maxLat < 90 && mesh.xyz) {
-        const L = maxLat;
+    // (and a flat world's seam — the meridian its map is cut along: a strip of sea, as the page's worker sank it)
+    if ((maxLat < 90 || seamLon !== null) && mesh.xyz) {
+        const L = maxLat, deg = 180 / Math.PI, H = 7;
         for (let c = 0; c < n; c++) {
-            const lat = Math.abs(Math.asin(Math.max(-1, Math.min(1, mesh.xyz[3 * c + 2])))) * 180 / Math.PI;   // (this mesh: z north)
-            if (lat < L - 4) continue;
-            const f = Math.min(1, (lat - (L - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - L);
-            if (C.z[c] > sea) C.z[c] = C.z[c] * (1 - f) + sea * f;
+            const lat = Math.abs(Math.asin(Math.max(-1, Math.min(1, mesh.xyz[3 * c + 2])))) * deg;   // (this mesh: z north)
+            const LON = Math.atan2(mesh.xyz[3 * c + 1], mesh.xyz[3 * c]), Le = seamLon !== null ? (L - 2.5 + 2.5 * (0.55 * Math.sin(3 * LON + 0.7) + 0.3 * Math.sin(7 * LON + 2.1) + 0.15 * Math.sin(13 * LON + 4.2))) : L;   // (as the page's worker: js/planet-worker.js)
+            let f = lat < Le - 4 ? 0 : Math.min(1, (lat - (Le - 4)) / 4), sea = -0.25 - 0.08 * Math.max(0, lat - Le);
+            if (seamLon !== null) {
+                let d = Math.abs(Math.atan2(mesh.xyz[3 * c + 1], mesh.xyz[3 * c]) * deg - seamLon); if (d > 180) d = 360 - d;
+                if (d < H) { const g = Math.min(1, (H - d) / 4); if (g > f) { f = g; sea = -0.25 - 0.08 * Math.max(0, H - 4 - d); } }
+            }
+            if (f > 0 && C.z[c] > sea) C.z[c] = C.z[c] * (1 - f) + sea * f;
         }
     }
     let ocean = oceanMask(mesh, C.z);

@@ -6,6 +6,7 @@
 // What is Generate's own: the sliders, the planet code, the plate edits (Ctrl-click, or the edit button on a phone, then
 // Rebuild), the Plates view and the Inspect list's layers (js/generate-plates.js), the build overlay, the tutorial.
 
+import { history as undoHistory } from './dnd/undo.js';
 import Delaunator from 'delaunator';
 import { setDelaunator } from './sphere-mesh.js';
 import { meshFromArrays } from '../v2/js/core/sim-mesh.js';
@@ -141,7 +142,14 @@ function received(msg) {
     hideBuildOverlay();
     realm.clear();
     if (kind === 'done') { snapshotSliders(); clearPending(); }
+    const prevCode = currentCode;
     updatePlanetCode(kind === 'editDone');
+    // (undo: back to the world before — a new one, or the plates rebuilt — by its planet code; its realm comes back as kept)
+    if (worldReplay) worldReplay = false;
+    else if (prevCode && currentCode && prevCode !== currentCode) {
+        const from = prevCode, to = currentCode;
+        undoHistory.push({ label: kind === 'editDone' ? 'plates rebuilt' : 'a new world', undo: () => { worldReplay = true; applyCode(from); }, redo: () => { worldReplay = true; applyCode(to); } });
+    }
     reapplyBtn.classList.remove('spinning');
     stats(msg);
     $('generate').dispatchEvent(new CustomEvent('generate-done'));
@@ -272,8 +280,9 @@ for (const el of [pv.ui.canvas, pv.ui.map]) {
         const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) >= 6, piece = down.piece;
         down = null;
         if (moved) return;
+        const before = new Set(pending);
         if (pending.has(piece)) pending.delete(piece); else pending.add(piece);
-        pendingChanged();
+        pendingChanged(); recordPending(before);
         readout(e);
     });
     el.addEventListener('contextmenu', (e) => { if (e.ctrlKey || e.metaKey) e.preventDefault(); });
@@ -321,10 +330,11 @@ for (const el of [pv.ui.canvas, pv.ui.map]) {
         }
         if (!got.size) return;
         // (a single piece toggles; several are marked — or, all already marked, unmarked)
+        const before = new Set(pending);
         if (got.size === 1) { const p = [...got][0]; if (pending.has(p)) pending.delete(p); else pending.add(p); }
         else if ([...got].every(p => pending.has(p))) for (const p of got) pending.delete(p);
         else for (const p of got) pending.add(p);
-        pendingChanged(); readout(e);
+        pendingChanged(); recordPending(before); readout(e);
     }, { capture: true });
 }
 addEventListener('keydown', (e) => {
@@ -341,7 +351,15 @@ function pendingChanged() {
     document.body.classList.toggle('edits-pending', pending.size > 0);      // (the readout steps up over the button)
 }
 function clearPending() { pending.clear(); pendingChanged(); }
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && pending.size) clearPending(); });
+/** An edit of the plates marked, for undo: the set before it. */
+function recordPending(before) {
+    const after = new Set(pending);
+    if (before.size === after.size && [...before].every(p => after.has(p))) return;
+    const set = (S) => { pending.clear(); for (const p of S) pending.add(p); pendingChanged(); };
+    undoHistory.push({ label: 'plates marked', undo: () => set(before), redo: () => set(after) });
+}
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && pending.size) { const before = new Set(pending); clearPending(); recordPending(before); } });
+undoHistory.setBusy(() => !!building || !!realm?.busy);
 rebuildFab.addEventListener('click', () => {
     if (!pending.size || !world || building) return;
     for (const id of pending) { if (world.plateIsOcean.has(id)) world.plateIsOcean.delete(id); else world.plateIsOcean.add(id); }
@@ -356,6 +374,7 @@ $('editToggle')?.addEventListener('click', () => { state.editMode = !state.editM
 // ── the sliders: their values, the stale build button, Reapply, the climate ──
 const sliderIds = ['sN', 'sP', 'sCn', 'sJ', 'sNs', 'sCsv', 'sLc'], PLATE_SLIDERS = ['sP', 'sCn', 'sCsv', 'sLc'], SCULPT = ['sTw', 'sS', 'sGl', 'sHEr', 'sTEr', 'sRs'];
 let lastGenValues = {};
+let worldReplay = false;                 // (D&D fork: a world made again by undo or redo — not a new entry)
 function snapshotSliders() { for (const id of sliderIds) lastGenValues[id] = $(id).value; }
 function checkStale() {
     const btn = $('generate');

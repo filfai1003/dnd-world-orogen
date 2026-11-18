@@ -3,6 +3,7 @@
 // in the browser per planet code. The work itself is realm-worker.js's; the grid it works on, realm-data.js's.
 
 import { realmGrid, GW, GH, KOPPEN_CODES } from './realm-data.js';
+import { history as undoHistory } from '../dnd/undo.js';
 import { colorMap, rollShift } from '../../v2/js/evolution/export.js';
 
 const $ = (id) => document.getElementById(id);
@@ -703,6 +704,41 @@ export class Realm {
         this.saveCampaign();
         const k = this.storeKey(); if (!k || !this.data) return;
         try { localStorage.setItem(k, JSON.stringify(this.snapshot())); } catch { /* (kept only where the browser allows) */ }
+        this.recordUndo();
+    }
+    // ── undo (js/dnd/undo.js): the realm as it was before an edit and after it, one entry per burst of edits (a wish
+    // changed and the kingdoms placed again: one) ──
+    recordUndo() {
+        if (!this.data) return;
+        const js = JSON.stringify({ code: this.getCode(), ...this.snapshot() });
+        if (this.restoring) { this.lastSnap = js; if (!this.busy) this.restoring = false; return; }
+        // (a world's first realm: where its history starts)
+        if (!this.lastSnap || JSON.parse(this.lastSnap).code !== this.getCode()) { this.lastSnap = js; this.undoBase = null; return; }
+        if (js === this.lastSnap) return;
+        if (this.undoBase == null) this.undoBase = this.lastSnap;
+        this.lastSnap = js;
+        clearTimeout(this.undoTimer);
+        this.undoTimer = setTimeout(() => this.flushUndo(), 700);
+    }
+    flushUndo() {
+        if (this.busy) { this.undoTimer = setTimeout(() => this.flushUndo(), 500); return; }
+        const from = this.undoBase, to = this.lastSnap; this.undoBase = null;
+        if (!from || from === to) return;
+        undoHistory.push({ label: 'kingdoms and cities', undo: () => this.restoreSnap(from), redo: () => this.restoreSnap(to) });
+    }
+    /** The realm as a snapshot had it: names alone when its land and cities are the same, else placed again from it. */
+    restoreSnap(js) {
+        const s = JSON.parse(js);
+        if (s.code !== this.getCode() || !this.data) return;
+        clearTimeout(this.undoTimer); this.undoBase = null;
+        const now = JSON.parse(this.lastSnap || '{}');
+        const same = now.owner === s.owner && JSON.stringify(now.cities) === JSON.stringify(s.cities)
+            && JSON.stringify(now.names?.routeEdits ?? null) === JSON.stringify(s.names.routeEdits ?? null) && JSON.stringify(now.names?.seats ?? null) === JSON.stringify(s.names.seats ?? null)
+            && JSON.stringify(now.names?.prefs) === JSON.stringify(s.names.prefs);
+        this.names = s.names; CHOSEN = this.names.colors || []; this.fillFor = null; this.drawCache = null;
+        this.restoring = true; this.lastSnap = js;
+        if (same) { this.restoring = false; this.changed(); this.renderList(); this.onLegend?.(); const k = this.storeKey(); try { localStorage.setItem(k, JSON.stringify(this.snapshot())); } catch { /* */ } this.saveCampaign(); return; }
+        this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, edits: this.names.routeEdits, owner: s.owner, cities: s.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) });
     }
     /** Everything the realm needs to come back the same: its cities, names and wishes, and its kingdoms' land. */
     snapshot() {
@@ -1076,6 +1112,8 @@ export class Realm {
         const kind = (r) => { const A = d.cities[r.a], B = d.cities[r.b]; return A?.crown && B?.crown ? 'major' : (A?.crown || B?.crown) && A?.kingdom === B?.kingdom ? 'road' : 'trail'; };
         this.runs = [];
         for (const r of d.routes) {
+            // (D&D fork: no sea routes on the map, nor a road with any stretch by sea — the land's ways alone)
+            if (r.modes.includes(2)) continue;
             let start = 0;
             for (let i = 1; i <= r.modes.length; i++) {
                 if (i === r.modes.length || r.modes[i] !== r.modes[start]) {

@@ -1841,3 +1841,6 @@ body.dnd-no-degrees .gf-num { display: none; }
 .realm-saves .realm-save-acts { display: flex; gap: 4px; flex-wrap: wrap; }
 .realm-saves .realm-save-acts button { padding: 1px 6px; font-size: 11px; width: auto; }
 @media (max-width: 768px) { .realm-saves .realm-save-acts button, .realm-save-name { min-height: 44px; } }
+/* D&D fork: undo and redo, said briefly */
+.dnd-toast { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 70; padding: 6px 14px; border-radius: 16px; background: var(--ink); color: var(--surface); font: 500 12px/1.4 var(--font-ui); box-shadow: var(--shadow-chip); pointer-events: none; }
+.dnd-toast[hidden] { display: none; }

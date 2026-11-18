@@ -435,7 +435,7 @@ export class Composer {
         // (the kingdoms, when their names do not all fit on the map)
         if (this.realm.enabled && this.realm.data && this.realm.kingdomsInLegend) parts.push(`<div class="dnd-leg-row dnd-leg-kingdoms">${this.realm.names.kingdoms.map((n, k) => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${this.realm.colorOf(k)}"></i>${esc(n)}</span>`).join('')}</div>`);
         if (this.realm.enabled && this.realm.data) { const ml = this.realm.markLegend(); if (ml) parts.push(ml); }
-        if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Routes: roads and river ways black, sea routes blue — main ones solid, the rest dashed</div>');
+        if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Roads and river ways: main ones solid, the rest dashed (the sea routes are not drawn)</div>');
         el.innerHTML = parts.join('');
         el.hidden = !parts.length;
         if (parts.length) $('legendCard').hidden = false;

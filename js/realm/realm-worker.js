@@ -245,6 +245,7 @@ function stepCost(a, b, d, ex, ny, mode, port) {
         // (a kingdom's reach: slowed by the natural frontiers — borders settle on them; rivers cost nothing to cross)
         if (mode === 'reach') {
             cost *= 0.5 * (barrierFor(a) + barrierFor(b));
+            if (g.kMul) cost *= g.kMul[g.curLab] ?? 1;                  // (a kingdom's pace: slower for one too big)
         }
         return cost;
     }
@@ -253,7 +254,7 @@ function stepCost(a, b, d, ex, ny, mode, port) {
         if (!lb && g.landDist[b] > 200) return -1;
         g.stepMode = 2;
         // (the sea a frontier too — a kingdom keeps mostly to its own shores — save for a seafaring people)
-        return d / (g.useAdapt && g.adapt[g.curLab]?.sea ? 9 : 5);
+        return d / (g.useAdapt && g.adapt[g.curLab]?.sea ? 9 : 5) * (g.kMul ? g.kMul[g.curLab] ?? 1 : 1);
     }
     // (the traveller: on and off the water at ports alone)
     if (la !== lb) {
@@ -849,7 +850,7 @@ function balanceSizes(owner, K, prefs, caps) {
     if (!sized) return;
     const fixed = new Uint8Array(g.n); for (const c of caps) if (c >= 0) fixed[c] = 1;
     const r = (k) => (T[k] ? A[k] / T[k] : 1);
-    const ROUNDS = Math.max(20, Math.round(1500 / (Math.PI * R_KM / GH)));
+    const ROUNDS = Math.max(40, Math.round(3000 / (Math.PI * R_KM / GH)));
     for (let round = 0; round < ROUNDS; round++) {
         const moves = [];
         for (let c = 0; c < g.n; c++) {
@@ -873,6 +874,55 @@ function balanceSizes(owner, K, prefs, caps) {
             owner[c] = j; A[k] -= g.area[c]; A[j] += g.area[c]; moved++;
         }
         if (!moved) break;
+    }
+}
+/** The kingdoms' land tidied (D&D fork): a few passes of a majority filter (a land cell with at least 6 of its 8
+ *  neighbours one other kingdom's becomes that kingdom's), then every piece of a kingdom cut off from its capital on the
+ *  capital's own landmass given to the kingdom it borders most. The capitals never move. */
+function tidyOwners(owner, K, caps) {
+    const g = G, { GW, GH } = g, fixed = new Uint8Array(g.n);
+    for (const c of caps) if (c >= 0) fixed[c] = 1;
+    const cnt = new Int16Array(K);
+    for (let pass = 0; pass < 3; pass++) {
+        const next = owner.slice();
+        for (let c = 0; c < g.n; c++) {
+            const k = owner[c]; if (k < 0 || !g.land[c] || fixed[c]) continue;
+            const y = (c / GW) | 0, x = c - y * GW;
+            let best = -1, bn = 0; const seen = [];
+            for (const [dx, dy] of DIRS) {
+                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                const d = yy * GW + ((x + dx + GW) % GW), j = owner[d];
+                if (j < 0 || j === k || !g.land[d] || cutAt(c, d)) continue;
+                if (!cnt[j]) seen.push(j);
+                cnt[j]++; if (cnt[j] > bn) { bn = cnt[j]; best = j; }
+            }
+            for (const j of seen) cnt[j] = 0;
+            if (bn >= 6) next[c] = best;
+        }
+        owner.set(next);
+    }
+    // (pieces cut off from their capital, on its landmass)
+    const lab = new Int32Array(g.n).fill(-1), q = new Int32Array(g.n);
+    let id = 0;
+    for (let s0 = 0; s0 < g.n; s0++) {
+        const k = owner[s0]; if (k < 0 || !g.land[s0] || lab[s0] >= 0) continue;
+        let qh = 0, qt = 0, hasCap = false; q[qt++] = s0; lab[s0] = id;
+        const border = new Map();
+        while (qh < qt) {
+            const c = q[qh++]; if (c === caps[k]) hasCap = true;
+            const y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) {
+                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                const d = yy * GW + ((x + dx + GW) % GW);
+                if (!g.land[d] || cutAt(c, d)) continue;
+                if (owner[d] === k) { if (lab[d] < 0) { lab[d] = id; q[qt++] = d; } }
+                else if (owner[d] >= 0) border.set(owner[d], (border.get(owner[d]) || 0) + 1);
+            }
+        }
+        id++;
+        if (hasCap || caps[k] < 0 || g.comp[s0] !== g.comp[caps[k]] || !border.size) continue;
+        let best = -1, bn = -1; for (const [j, n] of border) if (n > bn) { bn = n; best = j; }
+        for (let i = 0; i < qt; i++) owner[q[i]] = best;
     }
 }
 /** Kingdoms that must not touch, pulled apart: a strip (~3 cells) along their frontier given to a third kingdom that
@@ -1301,10 +1351,31 @@ function grow(K, prefs = []) {
         // (two that must not touch but do: both draw back, the kingdoms round them fill the gap)
         for (let k = 0; k < K; k++) for (const b of relOf(prefs, k, 'apart')) if (b < K && b > k && FR[k * K + b]) { bias[k] = Math.min(20, bias[k] + 3); bias[b] = Math.min(20, bias[b] + 3); }
     }
+    // (sizes: the kingdoms grown again over the land as before, each starting nearer or further — a kingdom too big further
+    // off, one too small nearer — until each is near its size: the frontiers still follow the ground. The geometric ways,
+    // growToSize, trimToSize and balanceSizes, drew straight lines; kept, unused)
+    if (prefs.some(p => p && SIZE[p.size])) {
+        // (each kingdom's pace over the land: a kingdom too big slowed everywhere, its home ground too; one too small sped)
+        // (the best round kept — the one with the kingdoms that share a landmass nearest their sizes; a kingdom alone on
+        // its land can't be helped, and doesn't count)
+        const mul = new Float64Array(K).fill(1), shared = caps.map((c, k) => caps.some((d, j) => j !== k && g.comp[d] === g.comp[c]));
+        let bestOwner = owner, bestWorst = Infinity;
+        for (let it = 0; it < 14; it++) {
+            const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && g.land[c]) A[owner[c]] += g.area[c];
+            const At = A.reduce((t, v) => t + v, 0) / K;
+            let worst = 0;
+            for (let k = 0; k < K; k++) { const f = SIZE[prefs[k]?.size]; if (!f || !A[k]) continue; const r = A[k] / (f * At); if (shared[k]) worst = Math.max(worst, Math.abs(Math.log(r))); mul[k] = Math.max(0.25, Math.min(4, mul[k] * Math.max(0.8, Math.min(1.25, r ** 0.35)))); }
+            if (worst < bestWorst) { bestWorst = worst; bestOwner = owner; }
+            if (worst < Math.log(1.15)) break;
+            say(1, 0.6 + 0.4 * it / 14);
+            g.kMul = mul;
+            owner = partition(caps, bias);
+            g.kMul = null;
+        }
+        { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && g.land[c]) A[owner[c]] += g.area[c]; const At = A.reduce((t, v) => t + v, 0) / K; let worst = 0; for (let k = 0; k < K; k++) { const f = SIZE[prefs[k]?.size]; if (f && A[k] && shared[k]) worst = Math.max(worst, Math.abs(Math.log(A[k] / (f * At)))); } if (worst > bestWorst) owner = bestOwner; }
+    }
     keepIslands(owner, K, prefs, caps);
-    growToSize(owner, K, prefs);
-    trimToSize(owner, K, prefs);
-    balanceSizes(owner, K, prefs, caps);
+    tidyOwners(owner, K, caps);
     joinBorders(owner, K, prefs);
     { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c]; g.lastArea = A; }
     // (a size asked as a condition and missed by far: unmet)

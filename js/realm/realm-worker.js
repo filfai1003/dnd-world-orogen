@@ -334,12 +334,12 @@ function searchTravel(sources, maxCost, port, onSettle) {
 // changed (bought, sold, left) only in a city. Each a layer of the search: node = cell + layer × n. ──
 const FOOT = 0, CANOE = 1, LIGHT = 2, HEAVY = 3, SHIP = 4, LAYERS = 5;
 const CANOE_KM_DAY = 45;     // paddled on still water; the current along adds or takes a great deal (0.3 m/s: twice as fast)
-const CANOE_CARRY = 1.8;     // walking with the canoe on one's back: this many times slower
+const CANOE_CARRY = 3;       // walking with the canoe on one's back: this many times slower (a portage, not a road: left behind sooner)
 const CANOE_Q = 50;          // a river big enough to paddle (m³/s)
 const LIGHT_KM_DAY = 55;     // a light vehicle (a cart, riders): any road
 const HEAVY_KM_DAY = 75;     // a heavy vehicle (a coach with relays, a caravan): the main roads alone
 const SWITCH_DAYS = 0.5;     // in a city: a vehicle bought, sold or left
-const CANOE_GET_DAYS = 1;    // a canoe got (built, bought, hired) at the water's edge, away from a city; left anywhere, at no cost
+const CANOE_GET_DAYS = 0.5;    // a canoe got (built, bought, hired) at the water's edge, away from a city; left anywhere, at no cost
 const SHIP_RIVER_Q = 1000;   // a river big enough for the travelling boat (m³/s)
 /** Can a traveller be in this layer on this cell? */
 function canBe(L, c) {

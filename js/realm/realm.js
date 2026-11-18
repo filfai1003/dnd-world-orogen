@@ -27,7 +27,8 @@ const WISHES = [
     ['rain', 'Humidity', [['', 'Any'], ['arid', 'Arid (under 250 mm)'], ['dry', 'Dry (250–600 mm)'], ['moderate', 'Moderate (600–1200 mm)'], ['wet', 'Wet (over 1200 mm)']]],
     ['where', 'Where', [['', 'Anywhere'], ['north', 'In the north'], ['south', 'In the south'], ['east', 'In the east'], ['west', 'In the west'],
         ['northeast', 'In the north-east'], ['northwest', 'In the north-west'], ['southeast', 'In the south-east'], ['southwest', 'In the south-west'], ['centre', 'In the centre']]],
-    ['island', 'Land', [['', 'Any'], ['island', 'On an island'], ['mainland', 'On the main continent']]],
+    ['island', 'Land', [['', 'Any'], ['island', 'On an island'], ['mainland', 'On the main continent'], ['peninsula', 'On a peninsula']]],
+    ['size', 'Size', [['', 'As its food allows'], ['small', 'Small (half the average)'], ['medium', 'Medium (the average)'], ['large', 'Large (twice the average)'], ['vast', 'Vast (three times)']]],
     ['sea', 'Sea', [['', 'Any'], ['coast', 'Maritime, on the coast'], ['inland', 'Inland']]],
     ['height', 'Height', [['', 'Any'], ['low', 'Lowlands (under 300 m)'], ['hills', 'Hills (250–1000 m)'], ['high', 'Highlands (over 900 m)']]],
     ['mountains', 'Mountains', [['', 'Any'], ['near', 'Near high mountains'], ['far', 'Far from mountains']]],
@@ -41,10 +42,79 @@ const WISHES = [
 /** A kingdom's wishes in a line — its conditions marked "must". */
 /** A journey's ways on the map: on foot, canoe, light vehicle, heavy vehicle, travelling boat — [colour, dash]. */
 const WAY_STYLE = [['rgba(110,90,160,0.95)', [8, 5]], ['rgba(63,124,194,0.6)', []], ['rgba(201,138,46,0.95)', []], ['rgba(178,34,30,0.95)', []], ['rgba(63,124,194,0.95)', []]];
+/** Wishes about other kingdoms, each a list (a frontier, or none, or distance — shared by both): [key, label, tip]. */
+const REL = [['borders', 'Borders', 'The kingdoms it shares a land frontier with'], ['apart', 'Never borders', 'The kingdoms it never touches: a march of another kingdom between them'],
+    ['far', 'Far from', 'The kingdoms whose capitals lie far from its own'],
+    ['allied', 'Allied with', 'Allies: their capitals joined by a main road', true], ['hostile', 'Hostile to', 'Enemies: no main road between them, and only the roads the network cannot do without', true]];
+/** The notable places (realm-worker.js landmarks): each kind's name, and what its label says of it. */
+const MARK_INFO = {
+    strait: ['Strait', () => 'Strait'],
+    pass: ['Mountain pass', m => `Pass, ${fmtN(m.size)} m`],
+    lake: ['Great lake', m => `Great lake, ${fmtN(Math.round(m.size / 1000) * 1000)} km²`],
+    volcano: ['Volcano', m => `Volcano, ${fmtN(m.size)} m`],
+    waterfall: ['Great waterfall', () => 'Great falls'],
+    delta: ['River delta', m => 'Delta'],
+    peak: ['Highest peak', m => `Peak, ${fmtN(m.size)} m`],
+};
+const fmtN = (v) => Math.round(v).toLocaleString('en-US');
+const markKey = (m) => `${m.kind}:${Math.round(m.u * GW)},${Math.round(m.v * GH)}`;
+/** A notable place's mark, `r` px across, centred on (x, y). */
+function markGlyph(ctx, kind, x, y, r) {
+    const ink = 'rgba(40,25,15,0.95)', water = 'rgba(25,60,140,0.95)';
+    ctx.save(); ctx.lineWidth = Math.max(1.2, r / 4.5); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    if (kind === 'peak' || kind === 'volcano') {
+        ctx.moveTo(x - r, y + 0.75 * r); ctx.lineTo(x, y - 0.85 * r); ctx.lineTo(x + r, y + 0.75 * r); ctx.closePath();
+        ctx.fillStyle = kind === 'peak' ? 'rgba(250,242,222,1)' : 'rgba(178,34,30,0.95)'; ctx.fill(); ctx.strokeStyle = ink; ctx.stroke();
+        if (kind === 'volcano') { ctx.beginPath(); ctx.moveTo(x, y - 0.95 * r); ctx.quadraticCurveTo(x + 0.5 * r, y - 1.5 * r, x + 0.1 * r, y - 1.9 * r); ctx.strokeStyle = 'rgba(90,80,70,0.9)'; ctx.stroke(); }
+    } else if (kind === 'pass') {
+        ctx.arc(x - 1.25 * r, y, r, -0.35 * Math.PI, 0.35 * Math.PI); ctx.moveTo(x + 1.25 * r + r * Math.cos(0.65 * Math.PI), y - r * Math.sin(0.65 * Math.PI));
+        ctx.arc(x + 1.25 * r, y, r, 0.65 * Math.PI, 1.35 * Math.PI);
+        ctx.strokeStyle = ink; ctx.lineWidth *= 1.3; ctx.stroke();
+    } else if (kind === 'strait') {
+        ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x - 0.45 * r, y - 0.45 * r); ctx.lineTo(x - r, y); ctx.lineTo(x - 0.45 * r, y + 0.45 * r);
+        ctx.moveTo(x + 0.45 * r, y - 0.45 * r); ctx.lineTo(x + r, y); ctx.lineTo(x + 0.45 * r, y + 0.45 * r);
+        ctx.strokeStyle = water; ctx.lineWidth *= 1.2; ctx.stroke();
+    } else if (kind === 'lake') {
+        ctx.ellipse(x, y, r, 0.7 * r, 0, 0, 2 * Math.PI); ctx.fillStyle = 'rgba(150,190,230,0.95)'; ctx.fill(); ctx.strokeStyle = water; ctx.stroke();
+    } else if (kind === 'waterfall') {
+        for (const dy of [-0.45, 0.35]) { ctx.moveTo(x - 0.8 * r, y + dy * r - 0.4 * r); ctx.lineTo(x, y + dy * r + 0.4 * r); ctx.lineTo(x + 0.8 * r, y + dy * r - 0.4 * r); }
+        ctx.strokeStyle = water; ctx.lineWidth *= 1.2; ctx.stroke();
+    } else if (kind === 'delta') {
+        ctx.moveTo(x, y - r); ctx.lineTo(x, y + 0.2 * r); ctx.lineTo(x - 0.9 * r, y + r); ctx.moveTo(x, y + 0.2 * r); ctx.lineTo(x, y + r); ctx.moveTo(x, y + 0.2 * r); ctx.lineTo(x + 0.9 * r, y + r);
+        ctx.strokeStyle = water; ctx.lineWidth *= 1.2; ctx.stroke();
+    }
+    ctx.restore();
+}
+const SAVE_FORMAT = 'dnd-world-orogen-map';
+const getSaves = () => { try { return JSON.parse(localStorage.getItem('dnd-saves') || '[]'); } catch { return []; } };
+const setSaves = (list) => localStorage.setItem('dnd-saves', JSON.stringify(list));
+const savedBody = (id) => { try { return JSON.parse(localStorage.getItem(`dnd-save:${id}`) || 'null'); } catch { return null; } };
+const slug = (t) => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'map';
+function downloadJson(body) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(body)], { type: 'application/json' }));
+    a.download = `${slug(body.name)}.dndworld.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+/** The kingdoms' land, kept short: runs of "kingdom+1" × count, base 36 (realm-worker.js unrle reads it). */
+function rle(owner) {
+    const out = []; let v = owner[0], n = 0;
+    for (let i = 0; i < owner.length; i++) { if (owner[i] === v) { n++; continue; } out.push(`${(v + 1).toString(36)}.${n.toString(36)}`); v = owner[i]; n = 1; }
+    out.push(`${(v + 1).toString(36)}.${n.toString(36)}`);
+    return out.join(',');
+}
+/** A mark's picture, for the legend (a data URL). */
+function markIcon(kind) {
+    const c = document.createElement('canvas'); c.width = c.height = 36;
+    const x = c.getContext('2d'); markGlyph(x, kind, 18, 20, 11);
+    return c.toDataURL();
+}
 const HOLD_NAMES = { gems: 'Gems', iron: 'Iron', copper: 'Copper', tin: 'Tin', silver: 'Silver', gold: 'Gold', salt: 'Salt', coal: 'Coal' };
 const wishText = (p, names = []) => [...WISHES.map(([key, , opts]) => (p?.[key] ? [key, opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '')] : null)),
     p?.near !== undefined && p?.near !== '' && names[+p.near] ? ['near', `near ${names[+p.near]}`] : null,
-    Array.isArray(p?.borders) && p.borders.some(j => names[j]) ? ['borders', `borders ${p.borders.filter(j => names[j]).map(j => names[j]).join(', ')}`] : null]
+    p?.vassal !== undefined && p?.vassal !== '' && names[+p.vassal] ? ['vassal', `vassal of ${names[+p.vassal]}`] : null,
+    Array.isArray(p?.marks) && p.marks.length ? ['marks', `holds ${p.marks.map(m => MARK_INFO[m]?.[0].toLowerCase() ?? m).join(', ')}`] : null,
+    ...REL.map(([key, label]) => (Array.isArray(p?.[key]) && p[key].some(j => names[j]) ? [key, `${label.toLowerCase()} ${p[key].filter(j => names[j]).map(j => names[j]).join(', ')}`] : null))]
     .filter(Boolean).map(([key, t]) => (key === 'hold' ? [key, `holds the ${t.toLowerCase()} sources`] : [key, t])).map(([key, t]) => (p.req?.[key] ? `must: ${t}` : t)).join(' · ');
 
 const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
@@ -59,7 +129,7 @@ export class Realm {
         this.world = null; this.data = null; this.version = 0; this.busy = false; this.ready = false; this.reqId = 0;
         this.names = { kingdoms: [], cities: [], colors: [], prefs: [] };
         // (the kingdoms only coloured: never a border line)
-        this.show = { fills: true, borders: false, routes: true, names: true, capitals: true, towns: true };
+        this.show = { fills: true, borders: false, routes: true, names: true, capitals: true, towns: true, marks: true };
         this.editing = false; this.drag = null;
         // (on or off over any base map: the composer's Politica switch — composer.js draws it on screen)
         this.enabled = true; this.screenPos = []; this.labelBoxes = []; this.trip = null; this.tripId = 0;
@@ -120,13 +190,30 @@ export class Realm {
         k.addEventListener('input', sync); n.addEventListener('input', sync); sync();
         $('realmBuild').addEventListener('click', () => this.auto());
         $('realmReset').addEventListener('click', () => { this.forget(); this.auto(); });
-        for (const [id, key] of [['chkRealmFills', 'fills'], ['chkRealmCaps', 'capitals'], ['chkRealmTowns', 'towns'], ['chkRealmNames', 'names'], ['chkRealmRoutes', 'routes']]) {
+        for (const [id, key] of [['chkRealmFills', 'fills'], ['chkRealmCaps', 'capitals'], ['chkRealmTowns', 'towns'], ['chkRealmNames', 'names'], ['chkRealmRoutes', 'routes'], ['chkRealmMarks', 'marks']]) {
             $(id).checked = this.show[key];
             try { const kept = JSON.parse(localStorage.getItem('dnd.show') || '{}'); if (key in kept) this.show[key] = !!kept[key]; } catch { /* */ }
             $(id).checked = this.show[key];
-            $(id).addEventListener('change', (e) => { this.show[key] = e.target.checked; this.fillFor = null; try { localStorage.setItem('dnd.show', JSON.stringify(this.show)); } catch { /* */ } this.changed(false); });
+            $(id).addEventListener('change', (e) => { this.show[key] = e.target.checked; this.fillFor = null; try { localStorage.setItem('dnd.show', JSON.stringify(this.show)); } catch { /* */ } this.changed(false); this.onLegend?.(); });
         }
         $('realmEdit').addEventListener('click', () => this.setEditing(!this.editing));
+        // (the political map as a picture; the saved maps — this browser's, and files)
+        $('realmPng')?.addEventListener('click', () => this.downloadPng());
+        $('realmSave')?.addEventListener('click', () => this.saveMap());
+        $('realmOpenFile')?.addEventListener('click', () => $('realmFile').click());
+        $('realmFile')?.addEventListener('change', async (e) => {
+            const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+            try { const body = JSON.parse(await f.text()); if (body?.format !== SAVE_FORMAT || !body.code || !body.realm) throw new Error('not a D&D World map'); this.openMap(body); }
+            catch (err) { this.status(`Could not open the file: ${err.message}`); }
+        });
+        $('realmSaves')?.addEventListener('click', (e) => {
+            const b = e.target.closest('button[data-save]'); if (!b) return;
+            const id = b.dataset.save, body = savedBody(id);
+            if (b.dataset.act === 'open' && body) this.openMap(body);
+            if (b.dataset.act === 'file' && body) downloadJson(body);
+            if (b.dataset.act === 'delete') { setSaves(getSaves().filter(o => o.id !== id)); try { localStorage.removeItem(`dnd-save:${id}`); } catch { /* */ } this.renderSaves(); }
+        });
+        this.renderSaves();
         // (the lists: names typed, a capital chosen, a city removed)
         const list = $('realmList');
         list.addEventListener('change', (e) => {
@@ -137,11 +224,13 @@ export class Realm {
             // (a climate chosen: the kingdoms placed again, each in its own)
             if (t.dataset.kcap !== undefined) { this.names.ncap[+t.dataset.kcap] = +t.value; this.seatsFromCounts(); this.markSeats(); this.changed(); this.save(); }
             if (t.dataset.kreq !== undefined) { const p = this.names.prefs[+t.dataset.kreq]; p.req ||= {}; if (t.checked) p.req[t.dataset.key] = true; else delete p.req[t.dataset.key]; this.save(); this.auto(); }
-            if (t.dataset.kborder !== undefined) { const p = this.names.prefs[+t.dataset.kborder], j = +t.dataset.j, b = new Set(p.borders || []); if (t.checked) b.add(j); else b.delete(j); if (b.size) p.borders = [...b].sort((x, y) => x - y); else delete p.borders; this.save(); this.renderList(); this.auto(); }
+            if (t.dataset.kmark !== undefined) { const p = this.names.prefs[+t.dataset.kmark], b = new Set(p.marks || []); if (t.checked) b.add(t.dataset.kind); else b.delete(t.dataset.kind); if (b.size) p.marks = [...b]; else delete p.marks; this.save(); this.renderList(); this.auto(); }
+            if (t.dataset.krel !== undefined) { const k0 = +t.dataset.krel, p = this.names.prefs[k0], key = t.dataset.key, j = +t.dataset.j, b = new Set(p[key] || []); if (t.checked) b.add(j); else { b.delete(j); const q = this.names.prefs[j]; if (q?.[key]) { q[key] = q[key].filter(x => x !== k0); if (!q[key].length) delete q[key]; } } if (b.size) p[key] = [...b].sort((x, y) => x - y); else delete p[key]; this.save(); this.renderList(); this.auto(); }
             if (t.dataset.kpref !== undefined) { const p = this.names.prefs[+t.dataset.kpref]; if (t.value) p[t.dataset.key] = t.value; else delete p[t.dataset.key]; this.save(); this.auto(); }
         });
         list.addEventListener('input', (e) => { if (e.target.dataset.kcol !== undefined) this.setColor(+e.target.dataset.kcol, e.target.value); });
         list.addEventListener('click', (e) => {
+            const sb = e.target.closest('button[data-sheet]'); if (sb) { this.openSheet(+sb.dataset.sheet); return; }
             const f = e.target.closest('button[data-fold]');
             if (f) { const k = +f.dataset.fold; if (this.openK.has(k)) this.openK.delete(k); else this.openK.add(k); this.renderList(); return; }
             const b = e.target.closest('button[data-act]');
@@ -264,16 +353,23 @@ export class Realm {
         this.worker.postMessage({ cmd: 'link', id: ++this.tripId, a, b, from: d.cities[a].c, to: d.cities[b].c, ports: d.cities.filter(c => c.port).map(c => c.c) });
         this.save();
     }
-    /** A city picked: the first a journey's start, the second its end (a click off the cities: the journey cleared). */
+    /** A city picked: the first a journey's start, the second its end; Shift + click, one more stop (a click off the
+     *  cities: the journey cleared). */
     pickCity(e) {
         let best = -1, bd = 14;
         this.screenPos.forEach((q, i) => { if (!q) return; const d = Math.hypot(q[0] - e.clientX, q[1] - e.clientY); if (d < bd) { bd = d; best = i; } });
         if (best < 0) { if (this.trip) this.clearTrip(); return; }
         const t = this.trip;
-        if (!t || t.b !== undefined || t.a === best) { this.trip = { a: best }; this.tripCard(); this.changed(false); return; }
-        t.b = best; t.loading = true; this.tripCard(); this.changed(false);
-        const d = this.data;
-        this.worker.postMessage({ cmd: 'trip', id: ++this.tripId, a: t.a, b: best, from: d.cities[t.a].c, to: d.cities[best].c });
+        if (t && t.stops.length >= 2 && e.shiftKey && t.stops[t.stops.length - 1] !== best) { t.stops.push(best); this.runTrip(); return; }
+        if (!t || t.stops.length >= 2 || t.stops[0] === best) { this.trip = { stops: [best] }; this.tripCard(); this.changed(false); return; }
+        t.stops.push(best); this.runTrip();
+    }
+    /** The journey's ways worked out again, for its stops. */
+    runTrip() {
+        const t = this.trip, d = this.data;
+        t.loading = true; t.options = null; t.k = 0; this.tripCard(); this.changed(false);
+        t.key = t.stops.join('-');
+        this.worker.postMessage({ cmd: 'trip', id: ++this.tripId, key: t.key, cells: t.stops.map(i => d.cities[i].c) });
     }
     clearTrip() { this.trip = null; this.tripCard(); this.changed(false); }
     /** The journey's card: the two ways, their days and how they are spent. */
@@ -284,6 +380,7 @@ export class Realm {
             el = document.createElement('div'); el.id = 'dndTrip'; el.className = 'dnd-trip'; document.body.appendChild(el);
             el.addEventListener('click', (e) => {
                 if (e.target.closest('.dnd-trip-x')) { this.clearTrip(); return; }
+                if (e.target.closest('.dnd-trip-undo')) { this.trip.stops.pop(); this.runTrip(); return; }
                 const r = e.target.closest('[data-way]'); if (r && this.trip?.options?.[r.dataset.way]) { this.trip.shown = r.dataset.way; this.tripCard(); this.changed(false); }
             });
         }
@@ -291,19 +388,28 @@ export class Realm {
         const days = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} d`;
         const parts = (o) => [['foot', 'on foot'], ['canoe', 'by canoe'], ['light', 'by light vehicle'], ['heavy', 'by heavy vehicle'], ['ship', 'by travelling boat'], ['change', 'changing in cities']]
             .filter(([k]) => o.by[k] > 0.05).map(([k, l]) => `${days(o.by[k])} ${l}`).join(' · ');
+        const route = t.stops.map(nm).map(n => `<b>${n}</b>`).join(' → ');
         let body;
-        if (t.b === undefined) body = `<div class="dnd-trip-hint">From <b>${nm(t.a)}</b> — click a second city</div>`;
-        else if (t.loading) body = `<div class="dnd-trip-hint"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b> · working out the ways… ${t.k ? `${t.k} of ${t.n}` : ''}</div>`;
+        if (t.stops.length < 2) body = `<div class="dnd-trip-hint">From <b>${nm(t.stops[0])}</b> — click a second city</div>`;
+        else if (t.loading) body = `<div class="dnd-trip-hint">${route} · working out the ways… ${t.k ? `${t.k} of ${t.n}` : ''}</div>`;
         else {
             const O = t.options;
             const row = (key, label) => {
                 const o = O[key], on = t.shown === key;
-                return o ? `<button type="button" class="dnd-trip-way${on ? ' on' : ''}" data-way="${key}"><i class="dnd-way-dot ${key}"></i><span><b>${label}: ${days(o.days)}</b><span class="dnd-trip-parts">${parts(o)}</span></span></button>`
+                return o ? `<button type="button" class="dnd-trip-way${on ? ' on' : ''}" data-way="${key}"><i class="dnd-way-dot ${key}"></i><span><b>${label}: ${days(o.days)}</b> <span class="dnd-danger ${o.danger.level}">${o.danger.level} danger</span><span class="dnd-trip-parts">${parts(o)}</span></span></button>`
                     : `<div class="dnd-trip-way none"><i class="dnd-way-dot ${key}"></i><span><b>${label}</b>: no way</span></div>`;
             };
-            body = `<div class="dnd-trip-head"><b>${nm(t.a)}</b> → <b>${nm(t.b)}</b></div>
+            const o = O[t.shown];
+            const H = o?.hazards, kn = (j) => esc(this.names.kingdoms[j] ?? '');
+            const hz = H ? [['sea', 'on the open sea'], ['storm', 'in stormy waters'], ['ice', 'among sea ice'], ['desert', 'through desert'], ['cold', 'in polar cold'], ['heights', 'in high mountains (over 2,500 m)'], ['wilds', 'off the roads, in the wilds']]
+                .filter(([k]) => H.days[k] >= 0.5).map(([k, l]) => `${days(H.days[k])} ${l}`) : [];
+            if (H?.frontiers) hz.push(`${H.frontiers} frontier${H.frontiers > 1 ? 's' : ''} crossed`);
+            if (H?.hostile.length) hz.push(`hostile frontier${H.hostile.length > 1 ? 's' : ''}: ${H.hostile.map(([a, b]) => `${kn(a)} → ${kn(b)}`).join(', ')}`);
+            const legs = o && o.legs.length > 1 ? `<div class="dnd-trip-legs">${o.legs.map((l, i) => `${nm(t.stops[i])} → ${nm(t.stops[i + 1])}: ${days(l.days)}, <span class="dnd-danger ${l.level}">${l.level}</span>`).join('<br>')}</div>` : '';
+            body = `<div class="dnd-trip-head">${route}</div>
                 ${row('mix', 'Best, mixing them')}${row('foot', 'On foot')}${row('canoe', 'Canoe')}${row('light', 'Light vehicle')}${row('heavy', 'Heavy vehicle')}${row('ship', 'Travelling boat')}
-                <div class="dnd-trip-hint">Vehicles change only in a city. Click a way to see it on the map.</div>`;
+                ${o ? `<div class="dnd-trip-hazards"><b>Dangers on the way shown</b> ${hz.length ? hz.join(' · ') : 'none to speak of'}</div>${legs}` : ''}
+                <div class="dnd-trip-hint">Vehicles change only in a city. Click a way to see it on the map. Shift + click a city to add a stop${t.stops.length > 2 ? ' · <button type="button" class="dnd-trip-undo">Remove the last stop</button>' : ''}.</div>`;
         }
         el.innerHTML = `<button type="button" class="dnd-trip-x" aria-label="Close">×</button>${body}`;
     }
@@ -312,6 +418,7 @@ export class Realm {
         if (!this.enabled || !this.data || !this.onPlanet(e)) return;
         let hit = null;
         for (const b of this.labelBoxes) if (e.clientX >= b.box[0] && e.clientX <= b.box[2] && e.clientY >= b.box[1] && e.clientY <= b.box[3]) { hit = b; break; }
+        if (!hit) for (const { m, q } of this.markPos || []) if (Math.hypot(e.clientX - q[0], e.clientY - q[1]) <= 9) { hit = { kind: 'm', i: markKey(m) }; break; }
         if (!hit) {
             const p = this.pv.placeUnder(e);
             const i = p ? this.cityNear(p[0], p[1], e) : -1;
@@ -323,11 +430,11 @@ export class Realm {
         }
         if (!hit) return;
         e.preventDefault(); e.stopImmediatePropagation();
-        const names = hit.kind === 'k' ? this.names.kingdoms : this.names.cities;
+        const names = hit.kind === 'k' ? this.names.kingdoms : hit.kind === 'm' ? (this.names.marks ||= {}) : this.names.cities;
         document.querySelector('.realm-rename')?.remove();
         const box = document.createElement('div');
         box.className = 'realm-rename';
-        box.innerHTML = `<label>${hit.kind === 'k' ? 'Kingdom name' : 'City name'}</label><input type="text" value="${esc(names[hit.i] ?? '')}" spellcheck="false">`;
+        box.innerHTML = `<label>${hit.kind === 'k' ? 'Kingdom name' : hit.kind === 'm' ? 'Place name' : 'City name'}</label><input type="text" value="${esc(hit.kind === 'm' ? this.markName((this.data.marks || []).find(o => markKey(o) === hit.i) || {}) : names[hit.i] ?? '')}" spellcheck="false">`;
         box.style.left = `${Math.min(innerWidth - 230, Math.max(8, e.clientX - 100))}px`;
         box.style.top = `${Math.min(innerHeight - 80, e.clientY + 14)}px`;
         document.body.appendChild(box);
@@ -344,6 +451,126 @@ export class Realm {
         input.focus(); input.select();
     }
 
+    // ── the political map as a picture, and the saved maps ──
+    /** The political map in flat colours on a W × W/2 canvas, centred as the map is (`names`: with the names). */
+    flatMap(W, names = true) {
+        const H = W >> 1, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d'), shift = rollShift(W, +($('sMapCenterLon')?.value ?? 0));
+        if (!this.landMask && this.world?.fin) this.landMask = maskOf(this.world.fin);
+        const base = document.createElement('canvas'); base.width = GW; base.height = GH;
+        const bx = base.getContext('2d'), im = bx.createImageData(GW, GH);
+        for (let c = 0; c < GW * GH; c++) { const land = this.landMask?.[c]; const col = land ? [236, 224, 196] : [190, 210, 226]; im.data.set([...col, 255], 4 * c); }
+        bx.putImageData(im, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        for (const tx of shift ? [-shift, W - shift] : [0]) ctx.drawImage(base, tx, 0, W, H);
+        this.paint(ctx, W, { fills: this.show.fills !== false, borders: false, routes: this.show.routes, names, capitals: this.show.capitals, towns: this.show.towns, marks: this.show.marks }, shift);
+        return cv;
+    }
+    downloadPng() {
+        if (!this.data) return;
+        this.flatMap(4096).toBlob((b) => { if (!b) return; const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${slug($('realmSaveName')?.value || this.names.kingdoms[0] || 'political-map')}-political.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, 'image/png');
+    }
+    /** Everything to make this map again: the planet's code, the realm as it stands, the peoples. */
+    mapBody(name) {
+        const n = this.names;
+        return { format: SAVE_FORMAT, v: 1, name, date: new Date().toISOString(), code: this.getCode(), realm: this.snapshot(),
+            campaign: { kingdoms: n.kingdoms, colors: n.colors, prefs: n.prefs, ncap: n.ncap, towns: n.towns || [], N: +$('sRealmN').value } };
+    }
+    saveMap() {
+        if (!this.data || !this.getCode()) { this.status('Nothing to save yet: wait for the kingdoms'); return; }
+        const name = ($('realmSaveName').value || '').trim() || `${this.names.kingdoms.slice(0, 2).join(', ')}… (${new Date().toLocaleDateString('en-GB')})`;
+        const id = Date.now().toString(36), body = this.mapBody(name);
+        let thumb = ''; try { thumb = this.flatMap(240, false).toDataURL('image/jpeg', 0.7); } catch { /* */ }
+        try {
+            localStorage.setItem(`dnd-save:${id}`, JSON.stringify(body));
+            setSaves([{ id, name, date: body.date, code: body.code, thumb }, ...getSaves()]);
+            $('realmSaveName').value = '';
+            this.status(`Saved “${name}”`);
+        } catch { this.status('This browser has no room left for it: download it as a file instead'); downloadJson(body); }
+        this.renderSaves();
+    }
+    renderSaves() {
+        const el = $('realmSaves'); if (!el) return;
+        const list = getSaves();
+        el.innerHTML = list.length ? list.map(o => `<li>${o.thumb ? `<img src="${o.thumb}" alt="">` : '<span></span>'}<span class="realm-save-title" title="${esc(o.name)}">${esc(o.name)} <span class="realm-save-date">${new Date(o.date).toLocaleDateString('en-GB')}</span></span>
+            <span class="realm-save-acts"><button type="button" class="realm-btn" data-save="${o.id}" data-act="open" title="Open this map (the page loads it again)">Open</button><button type="button" class="realm-btn" data-save="${o.id}" data-act="file" title="Download it as a file">File</button><button type="button" class="realm-btn" data-save="${o.id}" data-act="delete" title="Delete it from this browser">Delete</button></span></li>`).join('')
+            : '<li class="climate-hint">No maps saved yet</li>';
+    }
+    /** A saved map opened: its realm kept for its planet code, its peoples remembered, and the page loaded on its code. */
+    openMap(body) {
+        try {
+            localStorage.setItem(`dnd-realm:${body.code}`, JSON.stringify(body.realm));
+            if (body.campaign) localStorage.setItem('dnd-campaign', JSON.stringify(body.campaign));
+        } catch { this.status('This browser has no room left to open it'); return; }
+        const url = `${location.pathname}#${encodeURIComponent(body.code)}`;
+        if (location.search || location.hash.slice(1) !== encodeURIComponent(body.code)) { location.href = url; if (!location.search) location.reload(); }
+        else location.reload();
+    }
+    /** A kingdom's sheet: [heading, text] rows, to show or to copy. */
+    sheetRows(k) {
+        const d = this.data, K = d.kingdoms[k], N = this.names, nm = (j) => N.kingdoms[j] || `Kingdom ${j + 1}`;
+        const pct = (v, t) => (t > 0 ? Math.round(100 * v / t) : 0), p = N.prefs[k] || {};
+        const lifeT = K.byLife.reduce((s, v) => s + v, 0), stT = K.byStaple.reduce((s, v) => s + v, 0), clT = Object.values(K.climate).reduce((s, v) => s + v, 0);
+        const towns = d.cities.map((c, i) => [c, i]).filter(([c]) => c.kingdom === k).sort((a, b) => (b[0].crown - a[0].crown) || (b[0].people - a[0].people));
+        const lordOf = (j) => { const v = N.prefs[j]?.vassal; return v !== undefined && v !== '' ? +v : -1; };
+        const relWord = (j) => {
+            if (lordOf(k) === j) return 'its overlord';
+            if (lordOf(j) === k) return 'its vassal';
+            const has = (key) => (N.prefs[k]?.[key] || []).includes(j) || (N.prefs[j]?.[key] || []).includes(k);
+            return has('hostile') ? 'hostile' : has('allied') ? 'allied' : 'at peace';
+        };
+        const wishLabel = (key) => {
+            const [a, j] = key.split(':');
+            if (a === 'marks') return `holds a ${MARK_INFO[j]?.[0].toLowerCase() ?? j}`;
+            if (j !== undefined) return `${{ borders: 'borders', apart: 'never borders', far: 'far from', near: 'near' }[a] ?? a} ${nm(+j)}`;
+            const w = WISHES.find(o => o[0] === a); const v = w?.[2].find(o => o[0] === p[a]);
+            return v ? `${w[1].toLowerCase()}: ${v[1].replace(/ \(.*\)$/, '').toLowerCase()}` : a;
+        };
+        const rows = [];
+        rows.push(['Capitals', towns.filter(([c]) => c.crown).map(([, i]) => N.cities[i]).join(', ') || '—']);
+        if (lordOf(k) >= 0) rows.push(['Vassal of', nm(lordOf(k))]);
+        rows.push(['People', `~${fmt(K.people)} people · ${fmt(K.area)} km² · ${K.cities} cities, ${K.ports} with a harbour`]);
+        rows.push(['Climate', Object.entries(K.climate).filter(([, v]) => pct(v, clT) >= 5).sort((a, b) => b[1] - a[1]).map(([g, v]) => `${CLIMATE_IT[g]} ${pct(v, clT)}%`).join(' · ') || '—']);
+        if (K.tempMid !== null) rows.push(['Weather', `mean yearly temperature ${Math.round(K.tempLo)} to ${Math.round(K.tempHi)} °C (mostly ~${Math.round(K.tempMid)} °C) · rain ${fmt(K.rainLo)}–${fmt(K.rainHi)} mm a year (mostly ~${fmt(K.rainMid)})`]);
+        rows.push(['Land', `mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km`]);
+        const ss = K.selfSufficiency;
+        rows.push(['Food', `${ss >= 1.3 ? 'a surplus' : ss >= 1 ? 'just enough' : 'not enough: relies on its neighbours'} (its land could feed ${ss.toLocaleString('en-GB', { maximumFractionDigits: 1 })} times its people) · ${K.byStaple.map((v, i) => [i, v]).filter(([i, v]) => i && pct(v, stT) >= 5).sort((a, b) => b[1] - a[1]).map(([i, v]) => `${STAPLE_IT[i]} ${pct(v, stT)}%`).join(', ') || '—'}`]);
+        rows.push(['Ways of life', K.byLife.map((v, i) => [i, v]).filter(([i, v]) => i && pct(v, lifeT) >= 3).sort((a, b) => b[1] - a[1]).map(([i, v]) => `${LIFE_IT[i]} ${pct(v, lifeT)}%`).join(' · ') || '—']);
+        if (Object.keys(K.holds || {}).length) rows.push(['Sources held', Object.entries(K.holds).sort((a, b) => b[1] - a[1]).map(([id, v]) => `${HOLD_NAMES[id] ?? id} ${pct(v, 1)}% of the world's`).join(' · ')]);
+        const marks = (d.marks || []).filter(m => m.kingdom === k);
+        if (marks.length) rows.push(['Notable places', marks.map(m => this.markName(m)).join(' · ')]);
+        rows.push(['Neighbours', (K.neighbours || []).map(j => `${nm(j)} (${relWord(j)})`).join(' · ') || 'none by land']);
+        const far = N.kingdoms.map((_, j) => j).filter(j => j !== k && !(K.neighbours || []).includes(j) && relWord(j) !== 'at peace');
+        if (far.length) rows.push(['Further away', far.map(j => `${nm(j)} (${relWord(j)})`).join(' · ')]);
+        if (K.met?.length) rows.push(['Wishes', K.met.map(([key, ok, must]) => `${ok ? '✓' : '✗'} ${must ? 'must: ' : ''}${wishLabel(key)}`).join(' · ')]);
+        rows.push(['Cities', towns.map(([c, i]) => `${N.cities[i]}${c.capital ? ' (capital)' : c.seat ? ' (capital)' : ''}: ~${fmt(c.people)} people, ${c.heightM} m, ${c.koppen}${c.port ? ', harbour' : ''}${c.river ? ', on a river' : ''}`).join('\n')]);
+        return rows;
+    }
+    openSheet(k) {
+        if (!this.data?.kingdoms[k]) return;
+        document.querySelector('.dnd-sheet')?.remove();
+        const rows = this.sheetRows(k), name = this.names.kingdoms[k] || `Kingdom ${k + 1}`;
+        const box = document.createElement('div');
+        box.className = 'dnd-sheet'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', `${name}: the kingdom's sheet`);
+        box.innerHTML = `<div class="dnd-sheet-head"><i class="dnd-dot" style="background:${khex(k)}"></i><h3>${esc(name)}</h3><button type="button" class="realm-btn" data-copy>Copy as text</button><button type="button" class="dnd-trip-x" aria-label="Close">×</button></div>
+            <dl>${rows.map(([h, t]) => `<dt>${esc(h)}</dt><dd>${esc(t).replace(/\n/g, '<br>')}</dd>`).join('')}</dl>`;
+        document.body.appendChild(box);
+        box.querySelector('.dnd-trip-x').addEventListener('click', () => box.remove());
+        box.querySelector('[data-copy]').addEventListener('click', (e) => {
+            const text = `${name}\n${rows.map(([h, t]) => `${h}: ${t.includes('\n') ? `\n  ${t.replace(/\n/g, '\n  ')}` : t}`).join('\n')}`;
+            navigator.clipboard?.writeText(text).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy as text'; }, 1500); }, () => {});
+        });
+        const esc0 = (ev) => { if (ev.key === 'Escape') { box.remove(); document.removeEventListener('keydown', esc0); } };
+        document.addEventListener('keydown', esc0);
+    }
+    /** The legend's row of notable places (or ''). */
+    markLegend() {
+        const d = this.data; if (!d || this.show.marks === false || !d.marks?.length) return '';
+        const kinds = Object.keys(MARK_INFO).filter(k => d.marks.some(m => m.kind === k));
+        return `<div class="dnd-leg-row">${kinds.map(k => `<span class="dnd-leg-mat"><img class="dnd-leg-icon" src="${markIcon(k)}" alt="">${MARK_INFO[k][0]}</span>`).join('')}</div>`;
+    }
+    /** A notable place's name: the one given it, else what it is. */
+    markName(m) { return this.names.marks?.[markKey(m)] || MARK_INFO[m.kind]?.[1](m) || m.kind; }
     setColor(k, hex) { this.names.colors[k] = hex; CHOSEN = this.names.colors; this.fillFor = null; this.changed(false); }
     /** The kingdoms' own choices (name, colour, climate), as many as there are kingdoms. */
     fitNames(K) {
@@ -376,7 +603,7 @@ export class Realm {
             this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES } });
             const kept = this.load();
             if (this.preset) { this.applyPreset(this.preset); this.auto(); }
-            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, edits: this.names.routeEdits, cities: kept.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) }); }
+            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, edits: this.names.routeEdits, owner: kept.owner || null, cities: kept.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) }); }
             else this.auto();
         }, 30);
     }
@@ -406,12 +633,12 @@ export class Realm {
         if (m.type === 'progress') { if (m.id === this.reqId) window.dndProgress?.('realm', m.step, m.steps, m.label, m.frac); return; }
         if (m.type === 'link') { if (m.route && this.data) { this.data.routes.push(m.route); this.runsFor = null; this.status(`Route added: ${this.names.cities[m.route.a]} – ${this.names.cities[m.route.b]}, ${Math.round(m.route.days)} d`); this.changed(); } else this.status('No way between those two cities'); return; }
         if (m.type === 'tripProgress') { const t = this.trip; if (t && m.id === this.tripId) { t.k = m.k; t.n = m.n; this.tripCard(); } return; }
-        if (m.type === 'trip') { const t = this.trip; if (t && m.id === this.tripId && t.a === m.a && t.b === m.b) { t.options = m.options; t.loading = false; t.shown = 'mix'; this.tripCard(); this.changed(false); } return; }
+        if (m.type === 'trip') { const t = this.trip; if (t && m.id === this.tripId && t.key === m.key) { t.options = m.options; t.loading = false; t.shown = 'mix'; this.tripCard(); this.changed(false); } return; }
         if (m.id !== this.reqId) return;
         this.busy = false;
         window.dndProgress?.('realm', null);
         if (m.type === 'error') { console.error(m.message); this.status(`Error: ${m.message.split('\n')[0]}`); return; }
-        this.data = m; this.ready = true; this.trip = null; this.tripCard();
+        this.data = m; this.ready = true; this.trip = null; this.tripCard(); queueMicrotask(() => this.onLegend?.());
         // (names: a kingdom by its index, a city by its place in the list — kept as they were where they still exist)
         this.fitNames(m.K);
         if (this.named === false) this.names.seats = m.cities.some(c => c.seat) ? m.cities.map(c => !!c.seat) : (this.seatsFromCounts(m), this.names.seats);
@@ -475,7 +702,11 @@ export class Realm {
     save() {
         this.saveCampaign();
         const k = this.storeKey(); if (!k || !this.data) return;
-        try { localStorage.setItem(k, JSON.stringify({ cities: this.data.cities.map(c => ({ u: +c.u.toFixed(5), v: +c.v.toFixed(5), capital: c.capital })), names: this.names })); } catch { /* (kept only where the browser allows) */ }
+        try { localStorage.setItem(k, JSON.stringify(this.snapshot())); } catch { /* (kept only where the browser allows) */ }
+    }
+    /** Everything the realm needs to come back the same: its cities, names and wishes, and its kingdoms' land. */
+    snapshot() {
+        return { cities: this.data.cities.map(c => ({ u: +c.u.toFixed(5), v: +c.v.toFixed(5), capital: c.capital })), names: this.names, owner: rle(this.data.owner), K: this.data.kingdoms.length };
     }
     load() { const k = this.storeKey(); if (!k) return null; try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }
     forget() { const k = this.storeKey(); if (k) try { localStorage.removeItem(k); } catch { /* */ } }
@@ -498,9 +729,9 @@ export class Realm {
             const links = (i) => d.routes.filter(r => r.a === i || r.b === i).map(r => { const o = r.a === i ? r.b : r.a; const by = r.modes.some(m => m === 2) ? 'by sea' : r.modes.some(m => m === 1) ? 'by river' : 'on foot'; return `${esc(this.names.cities[o] ?? '')} ${r.days.toFixed(0)} d ${by}`; }).join(' · ');
             const open = this.openK.has(k);
             return `<div class="realm-k${open ? ' open' : ''}">
-                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"></div>
+                <div class="realm-k-head"><button type="button" class="realm-fold" data-fold="${k}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the kingdom">${open ? '▾' : '▸'}</button><input type="color" class="realm-color" data-kcol="${k}" value="${khex(k)}" title="The kingdom's colour" aria-label="Kingdom colour"><input class="realm-name" data-kname="${k}" value="${esc(this.names.kingdoms[k])}" aria-label="Kingdom name"><button type="button" class="realm-btn realm-sheet-btn" data-sheet="${k}" title="The kingdom's sheet: everything about it on one card, to read or copy">Sheet</button></div>
                 <div class="realm-wish-sum">${esc(wishText(this.names.prefs[k], this.names.kingdoms)) || 'Anywhere'}</div>
-                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label><span></span><span></span><span></span><span class="realm-must-head" title="Ticked: a condition, which must hold. Unticked: a preference, met where it can be">Must</span>${[...WISHES, ['near', 'Near', [['', 'Any'], ...this.names.kingdoms.map((n, j) => [String(j), n]).filter(([j]) => +j !== k)]]].map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${String(this.names.prefs[k]?.[key] ?? '') === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label><input type="checkbox" class="realm-must" data-kreq="${k}" data-key="${key}" title="A condition: it must hold"${this.names.prefs[k]?.req?.[key] ? ' checked' : ''}>`).join('')}<span>Borders</span><span class="realm-borders" title="The kingdoms it shares a land frontier with">${this.names.kingdoms.map((n, j) => (j === k ? '' : `<label class="realm-border"><input type="checkbox" data-kborder="${k}" data-j="${j}"${(this.names.prefs[k]?.borders || []).includes(j) ? ' checked' : ''}>${esc(n || `Kingdom ${j + 1}`)}</label>`)).join('')}</span><input type="checkbox" class="realm-must" data-kreq="${k}" data-key="borders" title="A condition: it must hold"${this.names.prefs[k]?.req?.borders ? ' checked' : ''}></div>
+                ${open ? `<div class="realm-wishes" title="Where its people like to live: the capital stands where the most of these hold, and the kingdoms are placed again on each change"><label>Capitals<select class="realm-clim" data-kcap="${k}" title="How many capitals: the first, then its biggest towns">${[1, 2, 3, 4].map(v => `<option value="${v}"${(this.names.ncap?.[k] || 1) === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label><span></span><span></span><span></span><span class="realm-must-head" title="Ticked: a condition, which must hold. Unticked: a preference, met where it can be">Must</span>${[...WISHES, ['near', 'Near', [['', 'Any'], ...this.names.kingdoms.map((n, j) => [String(j), n]).filter(([j]) => +j !== k)]], ['vassal', 'Vassal of', [['', 'No one'], ...this.names.kingdoms.map((n, j) => [String(j), n]).filter(([j]) => +j !== k)]]].map(([key, label, opts]) => `<label>${label}<select class="realm-clim" data-kpref="${k}" data-key="${key}">${opts.map(([v, l]) => `<option value="${v}"${String(this.names.prefs[k]?.[key] ?? '') === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${key === 'vassal' ? '<span></span>' : `<input type="checkbox" class="realm-must" data-kreq="${k}" data-key="${key}" title="A condition: it must hold"${this.names.prefs[k]?.req?.[key] ? ' checked' : ''}>`}`).join('')}${REL.map(([key, label, tip, fact]) => `<span>${label}</span><span class="realm-borders" title="${tip}">${this.names.kingdoms.map((n, j) => (j === k ? '' : `<label class="realm-border"><input type="checkbox" data-krel="${k}" data-key="${key}" data-j="${j}"${(this.names.prefs[k]?.[key] || []).includes(j) || (fact && (this.names.prefs[j]?.[key] || []).includes(k)) ? ' checked' : ''}>${esc(n || `Kingdom ${j + 1}`)}</label>`)).join('')}</span>${fact ? '<span></span>' : `<input type="checkbox" class="realm-must" data-kreq="${k}" data-key="${key}" title="A condition: it must hold"${this.names.prefs[k]?.req?.[key] ? ' checked' : ''}>`}`).join('')}<span>Holds</span><span class="realm-borders" title="Notable places in or beside its land: a strait or a pass it holds, a great lake's shore, near a volcano, a great waterfall, a delta, the highest peaks">${Object.entries(MARK_INFO).map(([kind, [label]]) => `<label class="realm-border"><input type="checkbox" data-kmark="${k}" data-kind="${kind}"${(this.names.prefs[k]?.marks || []).includes(kind) ? ' checked' : ''}>${label}</label>`).join('')}</span><input type="checkbox" class="realm-must" data-kreq="${k}" data-key="marks" title="A condition: it must hold"${this.names.prefs[k]?.req?.marks ? ' checked' : ''}></div>
                 <div class="realm-facts">
                     <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
@@ -605,6 +836,7 @@ export class Realm {
             if (o.fills) this.paintFills(ctx, W, H);
             if (o.borders) this.paintBorders(ctx, W, H, s);
             if (o.routes) this.paintRoutes(ctx, W, H, s);
+            if (o.marks !== false && this.show.marks !== false) for (const m of d.marks || []) { markGlyph(ctx, m.kind, m.u * W, m.v * H, 6 * s); if (o.names) { ctx.font = `italic ${10 * s}px Georgia, 'Times New Roman', serif`; ctx.textAlign = 'center'; ctx.lineWidth = 3 * s; ctx.strokeStyle = 'rgba(250,240,215,0.85)'; const t = this.markName(m); ctx.strokeText(t, m.u * W, m.v * H + 14 * s); ctx.fillStyle = 'rgba(70,55,40,1)'; ctx.fillText(t, m.u * W, m.v * H + 14 * s); ctx.textAlign = 'left'; } }
             if (o.cities !== false) this.paintCities(ctx, W, H, s, o.names, o);
             ctx.restore();
         }
@@ -619,9 +851,12 @@ export class Realm {
         if (!this.fillCanvas || this.fillFor !== d) {
             const cv = document.createElement('canvas'); cv.width = GW; cv.height = GH;
             const cx = cv.getContext('2d'), im = cx.createImageData(GW, GH), px = im.data;
+            // (a vassal's land striped with its overlord's colour)
+            const lord = this.names.kingdoms.map((_, k) => { const v = this.names.prefs[k]?.vassal; return v !== undefined && v !== '' && +v !== k && +v < this.names.kingdoms.length ? +v : -1; });
             for (let c = 0; c < GW * GH; c++) {
                 const k = d.owner[c]; if (k < 0) continue;
-                const col = krgb(k);
+                const x = c % GW, y = (c / GW) | 0;
+                const col = krgb(lord[k] >= 0 && (x + y) % 6 < 2 ? lord[k] : k);
                 px[4 * c] = col[0]; px[4 * c + 1] = col[1]; px[4 * c + 2] = col[2]; px[4 * c + 3] = 135;
             }
             cx.putImageData(im, 0, 0);
@@ -720,7 +955,7 @@ export class Realm {
 
     // ── on screen: each city's mark and name, and each kingdom's name, at a constant size (composer.js's layer) ──
     /** The screen key's part for the realm (drawn again when it changes). */
-    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.a}-${this.trip.b}-${!!this.trip.options}-${this.trip.shown}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}`; }
+    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.stops.join('-')}-${!!this.trip.options}-${this.trip.shown}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}|${sh.marks}|${JSON.stringify(this.names.marks || {}).length}`; }
     /** Draw on the composer's screen layer: `pr.at(u, v)` → client px or null, `line(pts)` a broken polyline, `placed` the
      *  labels' boxes already taken. */
     drawOnScreen(ctx, pr, line, placed) {
@@ -767,7 +1002,7 @@ export class Realm {
                 }
                 ctx.setLineDash([]);
             }
-            for (const i of [t.a, t.b]) { const q = i === undefined ? null : pr.at(d.cities[i].u, d.cities[i].v); if (!q) continue; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 12, 0, 2 * Math.PI); ctx.stroke(); }
+            t.stops.forEach((i, j) => { const q = pr.at(d.cities[i].u, d.cities[i].v); if (!q) return; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 12, 0, 2 * Math.PI); ctx.stroke(); if (t.stops.length > 2) { ctx.font = "600 11px Georgia, 'Times New Roman', serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(250,242,222,0.95)'; ctx.strokeText(String(j + 1), q[0], q[1] - 19); ctx.fillStyle = 'rgba(178,34,30,1)'; ctx.fillText(String(j + 1), q[0], q[1] - 19); } });
         }
         // (the names: the kingdoms' first, over their capitals, then the towns' by importance, none over another)
         const fits = (b) => { for (const o of placed) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; placed.push(b); return true; };
@@ -815,11 +1050,18 @@ export class Realm {
             if (dr && dr.i === i) { ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 2 * Math.PI); ctx.strokeStyle = 'rgba(158,43,37,0.9)'; ctx.lineWidth = 2; ctx.stroke(); }
             placed.push([x - r, y - r, x + r, y + r]);
         }
+        // (the notable places: their marks, then — after the towns' names — their names, all or none)
+        const marks = sh.marks !== false ? (d.marks || []).map(m => ({ m, q: pr.at(m.u, m.v) })).filter(o => inView(o.q)) : [];
+        for (const { m, q } of marks) { markGlyph(ctx, m.kind, q[0], q[1], 6); placed.push([q[0] - 7, q[1] - 9, q[0] + 7, q[1] + 7]); }
+        this.markPos = marks;
         // (then the capitals' names, all or none; and only if they all fit, the towns', all or none)
         if (sh.names) {
             const item = (i) => { const c = d.cities[i], q = pos[i]; return { text: this.names.cities[i] ?? '', x: q[0] + (c.crown ? 7 : 4) + 4, y: q[1], font: `${c.crown ? '600 13px' : c.people >= 15000 ? '12px' : '11px'} Georgia, 'Times New Roman', serif`, fill: 'rgba(40,25,15,1)', align: 'left', tag: { kind: 'c', i } }; };
             const seen = order.filter(i => inView(pos[i]) && shown(d.cities[i]));
-            if (tier(seen.filter(i => d.cities[i].crown).map(item))) tier(seen.filter(i => !d.cities[i].crown).map(item));
+            if (tier(seen.filter(i => d.cities[i].crown).map(item))) {
+                const townsFit = tier(seen.filter(i => !d.cities[i].crown).map(item));
+                if (townsFit && marks.length) tier(marks.map(({ m, q }) => ({ text: this.markName(m), x: q[0], y: q[1] + 14, font: "italic 11px Georgia, 'Times New Roman', serif", fill: 'rgba(70,55,40,1)', align: 'center', tag: { kind: 'm', i: markKey(m) } })));
+            }
         }
         for (const [text, x, y, font, fill, align] of later) {
             ctx.font = font; ctx.textAlign = align; ctx.textBaseline = 'middle';

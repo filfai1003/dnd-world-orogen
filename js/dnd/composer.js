@@ -434,6 +434,7 @@ export class Composer {
         if (this.geo.size) parts.push(`<div class="dnd-leg-row">${MATERIALS.filter(m => this.geo.has(m.id)).map(m => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${css(m.rgb)}">${m.sym}</i>${m.name}</span>`).join('')}</div><div class="dnd-leg-note">Zones: where the material is likely · Circles: the richest deposits</div>`);
         // (the kingdoms, when their names do not all fit on the map)
         if (this.realm.enabled && this.realm.data && this.realm.kingdomsInLegend) parts.push(`<div class="dnd-leg-row dnd-leg-kingdoms">${this.realm.names.kingdoms.map((n, k) => `<span class="dnd-leg-mat"><i class="dnd-dot" style="background:${this.realm.colorOf(k)}"></i>${esc(n)}</span>`).join('')}</div>`);
+        if (this.realm.enabled && this.realm.data) { const ml = this.realm.markLegend(); if (ml) parts.push(ml); }
         if (this.realm.enabled && this.realm.data) parts.push('<div class="dnd-leg-note">Routes: roads and river ways black, sea routes blue — main ones solid, the rest dashed</div>');
         el.innerHTML = parts.join('');
         el.hidden = !parts.length;

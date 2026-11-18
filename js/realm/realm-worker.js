@@ -43,10 +43,10 @@ self.onmessage = ({ data: msg }) => {
         const t0 = performance.now();
         G.reqId = msg.id; G.ncap = msg.ncap || []; G.keepPorts = msg.keepPorts || []; G.seatsIn = msg.seats || null; G.edits = msg.edits || null;
         if (msg.cmd === 'link') { self.postMessage({ type: 'link', id: msg.id, route: linkRoute(msg.a, msg.b, msg.from, msg.to, msg.ports || []) }); return; }
-        if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, a: msg.a, b: msg.b, options: tripOptions(msg.from, msg.to, (k, n) => self.postMessage({ type: 'tripProgress', id: msg.id, k, n })) }); return; }
+        if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, key: msg.key, options: tripOptions(msg.cells, (k, n) => self.postMessage({ type: 'tripProgress', id: msg.id, k, n })) }); return; }
         if (msg.cmd === 'unroute') { const gone = new Set(msg.pairs.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`))); G.routeList = (G.routeList || []).filter(r => !gone.has(r.a < r.b ? `${r.a}-${r.b}` : `${r.b}-${r.a}`)); roadMasks(); return; }
         if (msg.cmd === 'fixed') { say(1); G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
-        const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
+        const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities, msg.owner);
         res.ms = Math.round(performance.now() - t0);
         self.postMessage({ type: 'realm', id: msg.id, ...res }, [res.owner.buffer]);
     } catch (err) {
@@ -382,13 +382,15 @@ function layerStep(L, a, b, d, ex, ny) {
     return -1;
 }
 /** The best journey from cell `a` to cell `b` using only the layers `allowed` (on foot always), vehicles changed in cities. */
-function journey(a, b, allowed) {
+function journey(a, b, allowed, startL = FOOT) {
     const g = G, { GW, GH, n } = g, N = LAYERS * n;
     if (!g.mdist) { g.mdist = new Float32Array(N); g.mfrom = new Int32Array(N); g.mheap = new Heap(1 << 20); }
     const { mdist, mfrom, mheap } = g, ok = new Uint8Array(LAYERS);
     for (const L of allowed) ok[L] = 1; ok[FOOT] = 1;
     mdist.fill(Infinity); mfrom.fill(-1); mheap.clear();
     mdist[a] = 0; mheap.push(a, 0);
+    // (a stop on a longer journey: the vehicle the last leg ended in kept, at no cost)
+    if (startL !== FOOT && ok[startL] && canBe(startL, a)) { mdist[a + startL * n] = 0; mheap.push(a + startL * n, 0); }
     let end = -1;
     while (mheap.size) {
         const k = mheap.keys[0], v = mheap.pop();
@@ -413,21 +415,71 @@ function journey(a, b, allowed) {
     for (let v = end; v >= 0; v = mfrom[v]) nodes.push(v);
     nodes.reverse();
     const KEYS = ['foot', 'canoe', 'light', 'heavy', 'ship'];
-    const by = { foot: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path = [], layers = [];
+    const by = { foot: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path = [], layers = [], H = hazardsNew();
+    let prev = -1;
     for (let i = 0; i < nodes.length; i++) {
         const v = nodes[i], L = (v / n) | 0, c = v - L * n, dt = i ? mdist[v] - mdist[nodes[i - 1]] : 0;
         if (i && nodes[i - 1] % n === c) { by.change += dt; continue; }
-        if (i) { by[KEYS[L]] += dt; layers.push(L); }
+        if (i) { by[KEYS[L]] += dt; layers.push(L); hazardStep(H, prev, c, dt); }
         path.push([((c % GW) + 0.5) / GW, (((c / GW) | 0) + 0.5) / GH]);
+        prev = c;
     }
-    return { days: mdist[end], by, path, layers };
+    return { days: mdist[end], by, path, layers, endL: (end / n) | 0, hazards: H };
 }
+// ── a journey's dangers (D&D fork): the days spent where travel is hard or risky, and the frontiers crossed ──
+const hazardsNew = () => ({ days: { sea: 0, storm: 0, ice: 0, desert: 0, cold: 0, heights: 0, wilds: 0 }, frontiers: 0, hostile: [] });
+function hazardStep(H, a, c, dt) {
+    const g = G, D = H.days;
+    if (!g.land[c]) {
+        if (g.lake[c]) return;
+        if (g.landDist[c] > 200) D.sea += dt;
+        if (Math.hypot(g.windU[c], g.windV[c]) > 9) D.storm += dt;
+        if (g.seaIce[c] > 0.15) D.ice += dt;
+        return;
+    }
+    const code = g.codes[g.koppen[c]] || '';
+    if (/^BW/.test(code)) D.desert += dt;
+    if (code[0] === 'E' || g.tempC[c] < -8) D.cold += dt;
+    if (g.heightM[c] > 2500) D.heights += dt;
+    if (!g.roadAny?.[c] && !g.cityCell?.[c]) D.wilds += dt;
+    // (a frontier crossed on land: counted; between kingdoms at odds, named)
+    const O = g.owner;
+    if (O && a >= 0 && g.land[a] && O[a] >= 0 && O[c] >= 0 && O[a] !== O[c]) {
+        H.frontiers++;
+        if (relation(g.prefs, O[a], O[c]) === 2) H.hostile.push([O[a], O[c]]);
+    }
+}
+/** How dangerous, from the hazards: a weighted count of the hard days, and each hostile frontier a great deal. */
+function hazardLevel(H, days) {
+    // (the share of the journey's days that are hard ones, weighted — a long journey is not dangerous for being long —
+    // then each hostile frontier crossed one level up)
+    const D = H.days, w = D.sea * 1 + D.storm * 1.5 + D.ice * 2 + D.desert * 1.2 + D.cold * 1.2 + D.heights * 1.2 + D.wilds * 0.4;
+    const r = days > 0 ? w / days : 0, LV = ['low', 'moderate', 'high', 'extreme'];
+    const i = Math.min(3, (r < 0.12 ? 0 : r < 0.3 ? 1 : r < 0.6 ? 2 : 3) + Math.min(2, H.hostile.length));
+    return { score: Math.round(100 * r) / 100, level: LV[i] };
+}
+function hazardsAdd(A, B) { for (const k in A.days) A.days[k] += B.days[k]; A.frontiers += B.frontiers; A.hostile.push(...B.hostile); return A; }
 /** Between two cities: the best journey each way of travelling allows — on foot, by canoe, by light vehicle, by heavy
  *  vehicle, by travelling boat — and the best of all, mixing them (changed in cities). */
-function tripOptions(a, b, done) {
+function tripOptions(stops, done) {
     const plans = [['foot', [FOOT]], ['canoe', [CANOE]], ['light', [LIGHT]], ['heavy', [HEAVY]], ['ship', [SHIP]], ['mix', [CANOE, LIGHT, HEAVY, SHIP]]];
-    const out = {};
-    plans.forEach(([key, allowed], i) => { out[key] = journey(a, b, allowed); done?.(i + 1, plans.length); });
+    const out = {}, legsN = stops.length - 1, total = plans.length * legsN;
+    let k = 0;
+    plans.forEach(([key, allowed], pi) => {
+        // (leg by leg, each starting in the vehicle the last one ended in — it can be kept, or changed, in the city)
+        let all = { days: 0, by: { foot: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path: [], layers: [], legs: [], hazards: hazardsNew() }, L = FOOT;
+        for (let i = 0; i < legsN && all; i++) {
+            const o = journey(stops[i], stops[i + 1], allowed, L);
+            done?.(++k, total);
+            if (!o) { all = null; break; }
+            all.days += o.days; for (const b in o.by) all.by[b] += o.by[b];
+            all.path.push(...(all.path.length ? o.path.slice(1) : o.path)); all.layers.push(...o.layers);
+            all.legs.push({ days: o.days, level: hazardLevel(o.hazards, o.days).level }); hazardsAdd(all.hazards, o.hazards); L = o.endL;
+        }
+        if (!all) k = (pi + 1) * legsN;
+        if (all) all.danger = hazardLevel(all.hazards, all.days);
+        out[key] = all;
+    });
     return out;
 }
 /** The trace of a traveller's way to cell `end` (after searchTravel): its cells and each step's way — 0 on foot (or carrying
@@ -535,6 +587,7 @@ function wishes(p) {
     if (typeof p === 'string') p = { climate: p };
     const g = G, out = [];
     if (!p) return out;
+    if (!g.scores) { g.scores = new Map(); hopsFields(); }
     if (p.climate === 'highlands') out.push(['climate', 2, c => g.heightM[c] >= 1000]);
     else if (CLIMATE_RE[p.climate]) { const re = CLIMATE_RE[p.climate]; out.push(['climate', 2, c => re.test(g.codes[g.koppen[c]] || '')]); }
     if (TEMP[p.temp]) { const [a, b] = TEMP[p.temp]; out.push(['temp', 1.5, c => g.tempC[c] >= a && g.tempC[c] <= b]); }
@@ -550,6 +603,8 @@ function wishes(p) {
     // (an island: land a quarter the size of the biggest landmass or less; the main continent, the biggest and any near it)
     if (p.island === 'island') out.push(['island', 1.5, c => g.compArea[g.comp[c]] < 0.25 * g.compMax]);
     if (p.island === 'mainland') out.push(['island', 1.5, c => g.compArea[g.comp[c]] >= 0.25 * g.compMax]);
+    if (p.island === 'peninsula') { const P = peninsulaField(); out.push(['island', 1.5, c => P[c] === 1]); }
+    if (Array.isArray(p.marks) && p.marks.length) { landmarks(); for (const k of p.marks) if (g.markNear[k]) { const M = g.markNear[k]; out.push(['marks', 1.5, c => M[c] === 1, k]); } }
     if (p.sea === 'coast') out.push(['sea', 1, c => !!g.coast[c]]);
     if (p.sea === 'inland') out.push(['sea', 1, c => !g.coast[c] && g.seaHops[c] >= 4]);
     if (HEIGHT[p.height]) { const [a, b] = HEIGHT[p.height]; out.push(['height', 1, c => g.heightM[c] >= a && g.heightM[c] <= b]); }
@@ -621,14 +676,104 @@ function scoreOf(p) {
 }
 const nearOf = (p) => (p && typeof p === 'object' && p.near !== undefined && p.near !== '' ? +p.near : -1);
 const nearReq = (p) => !!(p && typeof p === 'object' && p.req?.near);
-/** The kingdoms it wants a land frontier with — its own list, and every kingdom that lists it (a frontier is shared). */
-const bordersOf = (prefs, k) => {
+/** The kingdoms a kingdom is tied to by a two-sided wish (`key`: borders, apart — never borders —, far) — its own list,
+ *  and every kingdom that lists it (a frontier, or its absence, is shared). */
+const relOf = (prefs, k, key) => {
     const out = new Set();
-    const own = prefs[k]; if (own && typeof own === 'object' && Array.isArray(own.borders)) for (const j of own.borders) if (j !== k) out.add(+j);
-    prefs.forEach((p, j) => { if (j !== k && p && typeof p === 'object' && Array.isArray(p.borders) && p.borders.includes(k)) out.add(j); });
+    const own = prefs[k]; if (own && typeof own === 'object' && Array.isArray(own[key])) for (const j of own[key]) if (+j !== k) out.add(+j);
+    prefs.forEach((p, j) => { if (j !== k && p && typeof p === 'object' && Array.isArray(p[key]) && p[key].map(Number).includes(k)) out.add(j); });
     return [...out];
 };
-const bordersReq = (prefs, k, j) => !!(prefs[k]?.req?.borders && (prefs[k].borders || []).includes(j)) || !!(prefs[j]?.req?.borders && (prefs[j].borders || []).includes(k));
+const relReq = (prefs, k, j, key) => !!(prefs[k]?.req?.[key] && (prefs[k][key] || []).map(Number).includes(j)) || !!(prefs[j]?.req?.[key] && (prefs[j][key] || []).map(Number).includes(k));
+/** A vassal's overlord, or −1. */
+const lordOf = (prefs, k) => { const v = prefs?.[k]?.vassal; return v !== undefined && v !== '' && +v !== k ? +v : -1; };
+/** How two kingdoms stand: 1 allied (or vassal and overlord), 2 hostile, 0 neither. */
+function relation(prefs, a, b) {
+    if (a === b || a < 0 || b < 0) return 0;
+    if (relOf(prefs, a, 'hostile').includes(b)) return 2;
+    if (relOf(prefs, a, 'allied').includes(b) || lordOf(prefs, a) === b || lordOf(prefs, b) === a) return 1;
+    return 0;
+}
+const bordersOf = (prefs, k) => { const out = new Set(relOf(prefs, k, 'borders')); const l = lordOf(prefs, k); if (l >= 0) out.add(l); (prefs || []).forEach((_, j) => { if (lordOf(prefs, j) === k) out.add(j); }); return [...out]; };
+const bordersReq = (prefs, k, j) => relReq(prefs, k, j, 'borders');
+const FAR_D = 1.4, APART_D = 0.9;
+const SIZE = { small: 0.5, medium: 1, large: 2, vast: 3 };   // (far: capitals ≥ 1.4 kingdoms' breadth apart; never bordering: ≥ 0.9, to start with)
+/** A kingdom given a size and still far too big: its land farthest from its capital (by the reach's days) handed to the
+ *  neighbours that reach it, until it is back near its size. */
+function trimToSize(owner, K, prefs) {
+    const g = G, { GW, GH } = g, A = new Float64Array(K);
+    for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c];
+    const At = A.reduce((t, v) => t + v, 0) / K;
+    for (let k = 0; k < K; k++) {
+        const f = SIZE[prefs[k]?.size]; if (!f || A[k] <= 1.25 * f * At) continue;
+        const cells = []; for (let c = 0; c < g.n; c++) if (owner[c] === k) cells.push(c);
+        cells.sort((a, b) => g.dist[b] - g.dist[a]);
+        let excess = A[k] - f * At;
+        const drop = new Uint8Array(g.n);
+        for (const c of cells) { if (excess <= 0) break; drop[c] = 1; excess -= g.area[c]; }
+        // (the neighbours grow into the dropped land from where they touch it)
+        const q = new Int32Array(g.n); let qh = 0, qt = 0;
+        const lab = new Int16Array(g.n).fill(-1);
+        for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && owner[c] !== k) {
+            const y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (drop[d]) { lab[c] = owner[c]; q[qt++] = c; break; } }
+        }
+        while (qh < qt) {
+            const c = q[qh++], y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (drop[d] && lab[d] < 0) { lab[d] = lab[c]; q[qt++] = d; } }
+        }
+        for (let c = 0; c < g.n; c++) if (drop[c] && lab[c] >= 0) owner[c] = lab[c];
+    }
+}
+/** Kingdoms that must not touch, pulled apart: a strip (~3 cells) along their frontier given to a third kingdom that
+ *  reaches it — a march between them. */
+function keepApart(owner, K, prefs) {
+    const g = G, { GW, GH } = g;
+    const bad = new Uint8Array(K * K); let any = false;
+    for (let k = 0; k < K; k++) for (const j of relOf(prefs, k, 'apart')) if (j < K) { bad[k * K + j] = bad[j * K + k] = 1; any = true; }
+    if (!any) return;
+    for (let pass = 0; pass < 3; pass++) {
+        const FR = frontiers(owner, K); let left = false;
+        for (let i = 0; i < K * K; i++) if (bad[i] && FR[i]) left = true;
+        if (!left) return;
+        // (the strip: the cells of both within 3 steps of where they touch)
+        const band = new Uint8Array(g.n), q = new Int32Array(g.n), h = new Uint8Array(g.n).fill(255);
+        let qh = 0, qt = 0;
+        for (let c = 0; c < g.n; c++) {
+            const k = owner[c]; if (k < 0 || !g.land[c]) continue;
+            const y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW), j = owner[d]; if (j >= 0 && g.land[d] && bad[k * K + j]) { h[c] = 0; q[qt++] = c; break; } }
+        }
+        while (qh < qt) {
+            const c = q[qh++]; band[c] = 1; if (h[c] >= 3) continue;
+            const y = (c / GW) | 0, x = c - y * GW, k = owner[c];
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (h[d] === 255 && owner[d] === k && g.land[d]) { h[d] = h[c] + 1; q[qt++] = d; } }
+        }
+        // (a third kingdom grows into the strip from where it touches it — never one of a pair kept apart from its neighbour)
+        const lab = new Int16Array(g.n).fill(-1); qh = 0; qt = 0;
+        for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && g.land[c] && !band[c]) {
+            const y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (band[d]) { lab[c] = owner[c]; q[qt++] = c; break; } }
+        }
+        let moved = 0;
+        while (qh < qt) {
+            const c = q[qh++], k = lab[c], y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) {
+                const yy = y + dy; if (yy < 0 || yy >= GH) continue;
+                const d = yy * GW + ((x + dx + GW) % GW);
+                if (!band[d] || lab[d] >= 0 || owner[d] === k) continue;
+                // (a cell beside the strip whose kingdom k is kept apart from: not for k)
+                let ok = true;
+                const y2 = (d / GW) | 0, x2 = d - y2 * GW;
+                for (const [ex, ey] of DIRS) { const y3 = y2 + ey; if (y3 < 0 || y3 >= GH) continue; const e = y3 * GW + ((x2 + ex + GW) % GW), j = owner[e]; if (j >= 0 && j !== k && !band[e] && bad[k * K + j]) { ok = false; break; } }
+                if (!ok) continue;
+                lab[d] = k; q[qt++] = d; moved++;
+            }
+        }
+        for (let c = 0; c < g.n; c++) if (band[c] && lab[c] >= 0) owner[c] = lab[c];
+        if (!moved) return;
+    }
+}
 /** Which kingdoms share a land frontier. */
 function frontiers(owner, K) {
     const g = G, { GW, GH } = g, A = new Uint8Array(K * K);
@@ -718,6 +863,164 @@ function hopsFields() {
     }
 }
 
+
+// ── the notable places (D&D fork): straits, mountain passes, great lakes, volcanoes, waterfalls, deltas, the highest
+// peaks — each found where the ground makes it (the sea narrowing between two coasts, a saddle between high walls, the
+// young volcanic rock's summits, a big river's steep drop or its mouth). G.marks: [{ kind, c, size }]; G.markNear[kind]:
+// the land within reach of one (a strait or a pass: the land that holds it). ──
+const MARK_KINDS = ['strait', 'pass', 'lake', 'volcano', 'waterfall', 'delta', 'peak'];
+function landmarks() {
+    const g = G;
+    if (g.marks) return g.marks;
+    const { GW, GH } = g, at = (x, y) => (y < 0 || y >= GH ? -1 : y * GW + ((x + GW) % GW));
+    const AX = [[1, 0], [0, 1], [1, 1], [1, -1]], out = [];
+    // (pick the best of a kind's candidates, kept `sepKm` apart, at most `max`)
+    const pick = (cands, kind, sepKm, max) => {
+        cands.sort((a, b) => b[1] - a[1]);
+        const got = [];
+        for (const [c, v, size] of cands) { if (got.length >= max) break; if (got.some(o => angKm(o.c, c) < sepKm)) continue; got.push({ kind, c, size: size ?? v }); }
+        out.push(...got);
+    };
+    // straits: open water with land close on two opposite sides (within ~3 cells, each a landmass of some size), the water
+    // running on along the other axis — a narrow passage between two seas
+    {
+        const cands = [];
+        for (let y = 2; y < GH - 2; y++) for (let x = 0; x < GW; x++) {
+            const c = y * GW + x; if (g.land[c] || g.lake[c] || g.seaIce[c] > 0.5) continue;
+            for (let a = 0; a < 4; a++) {
+                const [ax, ay] = AX[a], perp = a < 2 ? AX[1 - a] : AX[5 - a];
+                let l1 = -1, l2 = -1;
+                for (let k = 1; k <= 3 && l1 < 0; k++) { const d = at(x + k * ax, y + k * ay); if (d >= 0 && g.land[d]) l1 = d; }
+                for (let k = 1; k <= 3 && l2 < 0; k++) { const d = at(x - k * ax, y - k * ay); if (d >= 0 && g.land[d]) l2 = d; }
+                if (l1 < 0 || l2 < 0) continue;
+                const A1 = g.compArea[g.comp[l1]], A2 = g.compArea[g.comp[l2]];
+                if (Math.min(A1, A2) < 30000) continue;
+                let open = true;
+                for (let k = 1; k <= 6 && open; k++) for (const sg of [1, -1]) { const d = at(x + sg * k * perp[0], y + sg * k * perp[1]); if (d < 0 || g.land[d]) { open = false; break; } }
+                if (!open) continue;
+                cands.push([c, Math.min(A1, A2) * (g.comp[l1] === g.comp[l2] ? 0.5 : 1)]);
+                break;
+            }
+        }
+        pick(cands, 'strait', 600, 8);
+    }
+    // passes: a saddle — high walls on two opposite sides (600 m above, within ~4 cells), the ground falling away along the
+    // other axis on both sides (200 m below, within ~6) — the way through a range
+    {
+        const cands = [];
+        for (let y = 4; y < GH - 4; y++) for (let x = 0; x < GW; x++) {
+            const c = y * GW + x; if (!g.land[c] || g.ice[c]) continue;
+            const h = g.heightM[c]; if (h < 400) continue;
+            let best = 0;
+            for (let a = 0; a < 4; a++) {
+                const [ax, ay] = AX[a], perp = a < 2 ? AX[1 - a] : AX[5 - a];
+                let w1 = 0, w2 = 0;
+                for (let k = 1; k <= 4; k++) { const d1 = at(x + k * ax, y + k * ay), d2 = at(x - k * ax, y - k * ay); if (d1 >= 0) w1 = Math.max(w1, g.peakM[d1]); if (d2 >= 0) w2 = Math.max(w2, g.peakM[d2]); }
+                const wall = Math.min(w1, w2) - h; if (wall < 600) continue;
+                let f1 = Infinity, f2 = Infinity, ok = true;
+                for (let k = 1; k <= 6; k++) {
+                    const d1 = at(x + k * perp[0], y + k * perp[1]), d2 = at(x - k * perp[0], y - k * perp[1]);
+                    if (d1 < 0 || d2 < 0 || !g.land[d1] || !g.land[d2]) { ok = false; break; }
+                    if (k <= 2 && (g.heightM[d1] > h + 250 || g.heightM[d2] > h + 250)) { ok = false; break; }
+                    f1 = Math.min(f1, g.heightM[d1]); f2 = Math.min(f2, g.heightM[d2]);
+                }
+                if (!ok || f1 > h - 200 || f2 > h - 200) continue;
+                best = Math.max(best, wall);
+            }
+            if (best) cands.push([c, best, Math.round(h)]);
+        }
+        pick(cands, 'pass', 600, 8);
+    }
+    // great lakes: the biggest lakes (over ~15,000 km²), marked at their middle
+    {
+        const lab = new Int32Array(g.n).fill(-1), q = new Int32Array(g.n), lakes = [];
+        for (let s0 = 0; s0 < g.n; s0++) {
+            if (!g.lake[s0] || lab[s0] >= 0) continue;
+            let qh = 0, qt = 0, a = 0, sx = 0, sy = 0, sz = 0; q[qt++] = s0; lab[s0] = lakes.length;
+            while (qh < qt) {
+                const c = q[qh++]; a += g.area[c]; sx += g.xyz[3 * c]; sy += g.xyz[3 * c + 1]; sz += g.xyz[3 * c + 2];
+                const y = (c / GW) | 0, x = c - y * GW;
+                for (const [dx, dy] of DIRS) { const d = at(x + dx, y + dy); if (d >= 0 && g.lake[d] && lab[d] < 0) { lab[d] = lakes.length; q[qt++] = d; } }
+            }
+            let mid = s0, md = -2; const l = Math.hypot(sx, sy, sz) || 1;
+            for (let k = 0; k < qt; k++) { const c = q[k], dd = (g.xyz[3 * c] * sx + g.xyz[3 * c + 1] * sy + g.xyz[3 * c + 2] * sz) / l; if (dd > md) { md = dd; mid = c; } }
+            lakes.push([mid, a, Math.round(a)]);
+        }
+        g.lakeLab = lab;
+        pick(lakes.filter(([, a]) => a >= 15000), 'lake', 0, 6);
+    }
+    // volcanoes: summits of young volcanic rock (over 1000 m), the highest in their neighbourhood
+    {
+        const cands = [];
+        for (let y = 3; y < GH - 3; y++) for (let x = 0; x < GW; x++) {
+            const c = y * GW + x; if (!g.land[c] || !(g.volc?.[c] >= 100) || g.peakM[c] < 1000) continue;
+            let top = true;
+            for (let dy = -3; dy <= 3 && top; dy++) for (let dx = -3; dx <= 3; dx++) { const d = at(x + dx, y + dy); if (d >= 0 && d !== c && g.peakM[d] > g.peakM[c]) { top = false; break; } }
+            if (top) cands.push([c, g.peakM[c], Math.round(g.peakM[c])]);
+        }
+        pick(cands, 'volcano', 700, 6);
+    }
+    // waterfalls: a big river (over 150 m³/s) dropping steeply to the next cell downstream; deltas: the biggest rivers'
+    // mouths (over 1500 m³/s)
+    {
+        const falls = [], mouths = [];
+        for (let y = 1; y < GH - 1; y++) for (let x = 0; x < GW; x++) {
+            const c = y * GW + x; if (!g.land[c] || g.riverQ[c] < 300) continue;
+            const fu = g.flowU[c], fv = g.flowV[c]; if (!fu && !fv) continue;
+            const d = at(x + Math.round(fu * 1.2), y - Math.round(fv * 1.2)); if (d < 0 || d === c) continue;
+            const drop = g.heightM[c] - g.heightM[d];
+            if (g.land[d] && drop >= 220) falls.push([c, drop * Math.sqrt(g.riverQ[c]), Math.round(drop)]);
+            if (g.riverQ[c] >= 1500 && g.coast[c]) mouths.push([c, g.riverQ[c], Math.round(g.riverQ[c])]);
+        }
+        pick(falls, 'waterfall', 700, 5);
+        pick(mouths, 'delta', 700, 5);
+    }
+    // the highest peaks (over 3000 m), one a range
+    {
+        const cands = [];
+        for (let y = 2; y < GH - 2; y++) for (let x = 0; x < GW; x++) { const c = y * GW + x; if (g.land[c] && g.peakM[c] >= 3000) cands.push([c, g.peakM[c], Math.round(g.peakM[c])]); }
+        pick(cands, 'peak', 1500, 5);
+    }
+    // (the land within reach of each kind: a strait or a pass held from ~80 km, a great lake's shore, ~120 km of the rest)
+    g.markNear = {};
+    for (const kind of MARK_KINDS) {
+        const M = new Uint8Array(g.n), r = kind === 'strait' || kind === 'pass' ? 2 : 3;
+        for (const m of out) {
+            if (m.kind !== kind) continue;
+            if (kind === 'lake') {
+                const L = g.lakeLab[m.c];
+                for (let c = 0; c < g.n; c++) if (g.lakeLab[c] === L) { const y = (c / GW) | 0, x = c - y * GW; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const d = at(x + dx, y + dy); if (d >= 0 && g.land[d]) M[d] = 1; } }
+                continue;
+            }
+            const y = (m.c / GW) | 0, x = m.c - y * GW;
+            for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const d = at(x + dx, y + dy); if (d >= 0 && g.land[d]) M[d] = 1; }
+        }
+        g.markNear[kind] = M;
+    }
+    return (g.marks = out);
+}
+/** On a peninsula: land with sea round most of it (under 40% land within ~400 km) that still belongs to a big landmass. */
+function peninsulaField() {
+    const g = G;
+    if (g.penin) return g.penin;
+    const { GW, GH } = g, P = new Uint8Array(g.n), row = new Int32Array(GW + 1), pre = Array.from({ length: GH }, () => null);
+    for (let y = 0; y < GH; y++) { const r = new Int32Array(2 * GW + 1); for (let x = 0; x < 2 * GW; x++) r[x + 1] = r[x] + (g.land[y * GW + (x % GW)] ? 1 : 0); pre[y] = r; }
+    const RK = 400, ry = Math.round(RK / g.dyKm);
+    for (let y = 0; y < GH; y++) {
+        for (let x = 0; x < GW; x++) {
+            const c = y * GW + x; if (!g.land[c] || g.compArea[g.comp[c]] < 0.1 * g.compMax || g.seaHops[c] > 5) continue;
+            let L = 0, T = 0;
+            for (let yy = Math.max(0, y - ry); yy <= Math.min(GH - 1, y + ry); yy++) {
+                const rx = Math.min(GW / 2 - 1, Math.round(RK / Math.max(1, g.dxKm[yy])));
+                const a = x - rx + GW, b = x + rx + GW + 1;
+                L += pre[yy][b] - pre[yy][a]; T += b - a;
+            }
+            if (L < 0.4 * T) P[c] = 1;
+        }
+    }
+    return (g.penin = P);
+}
+
 function seedCapitals(K, prefs = []) {
     const g = G, MIN_KM2 = 150000;
     let cands = [];
@@ -761,6 +1064,15 @@ function seedCapitals(K, prefs = []) {
             if (!l.length && same.length) { const far = c => Math.max(...bs.map(b => angKm(c, out[b]))); const m = Math.min(...same.map(far)); l = same.filter(c => far(c) <= m + 0.25 * D0); }
             if (l.length) list = l; else if (bs.some(b => bordersReq(prefs, k, b))) g.unmet.push(k);
         }
+        // (far from, or never bordering, kingdoms already placed: their capitals well apart; else as far as the land allows)
+        for (const [key, D] of [['far', FAR_D], ['apart', APART_D]]) {
+            const fs = relOf(prefs, k, key).filter(b => b < K && out[b] >= 0);
+            if (!fs.length) continue;
+            const near = c => Math.min(...fs.map(b => angKm(c, out[b])));
+            let l = list.filter(c => near(c) >= D * D0);
+            if (!l.length) { const m = Math.max(...list.map(near)); l = list.filter(c => near(c) >= 0.85 * m); if (fs.some(b => relReq(prefs, k, b, key)) && key === 'far') g.unmet.push(k); }
+            if (l.length) list = l;
+        }
         // (its preferences: the sites meeting the most of them)
         if (W && W.nPref) {
             let best = 0; for (const c of list) if (W.S[c] > best) best = W.S[c];
@@ -794,8 +1106,9 @@ function grow(K, prefs = []) {
     K = caps.length;
     const bias = new Array(K).fill(0);
     let owner = null;
-    for (let it = 0; it < 7; it++) {
-        say(1, it / 7);
+    const IT = prefs.some(p => p && SIZE[p.size]) ? 10 : 7;
+    for (let it = 0; it < IT; it++) {
+        say(1, it / IT);
         owner = partition(caps, bias);
         const F = new Float64Array(K), A = new Float64Array(K), cx = new Float64Array(3 * K);
         for (let c = 0; c < g.n; c++) {
@@ -803,17 +1116,18 @@ function grow(K, prefs = []) {
             const f = g.food[c]; F[k] += f; A[k] += g.area[c];
             cx[3 * k] += f * g.xyz[3 * c]; cx[3 * k + 1] += f * g.xyz[3 * c + 1]; cx[3 * k + 2] += f * g.xyz[3 * c + 2];
         }
-        if (it === 6) break;
+        if (it === IT - 1) { g.lastArea = A; break; }
         const total = F.reduce((s, v) => s + v, 0), T = total / K;
         // (each capital moves to the best site near its kingdom's centre of food)
         const bestV = new Float64Array(K), bestC = caps.slice();
         // (a kingdom whose capital stands in its climate keeps it there)
         // (a capital moves only where its conditions still hold, its preferences are as well met, and the kingdom it wants
         // to be near is still near)
-        const keep = caps.map((c, k) => { const W = scoreOf(prefs[k]), j = nearOf(prefs[k]); return { W, at: W ? W.S[c] : 0, R: W?.R && W.R[c] ? W.R : null, j: j >= 0 && j < K && angKm(c, caps[j]) <= 0.9 * g.D0 ? j : -1, bs: bordersOf(prefs, k).filter(b => b < K && g.comp[caps[b]] === g.comp[c]) }; });
+        const keep = caps.map((c, k) => { const W = scoreOf(prefs[k]), j = nearOf(prefs[k]); return { W, at: W ? W.S[c] : 0, R: W?.R && W.R[c] ? W.R : null, j: j >= 0 && j < K && angKm(c, caps[j]) <= 0.9 * g.D0 ? j : -1, bs: bordersOf(prefs, k).filter(b => b < K && g.comp[caps[b]] === g.comp[c]), fs: [...relOf(prefs, k, 'far'), ...relOf(prefs, k, 'apart')].filter(b => b < K) }; });
         for (let c = 0; c < g.n; c++) {
             const k = owner[c]; if (k < 0 || !(g.site[c] > 0) || g.comp[c] !== g.comp[caps[k]] || (keep[k].W && keep[k].W.S[c] < keep[k].at) || (keep[k].R && !keep[k].R[c]) || (keep[k].j >= 0 && angKm(c, caps[keep[k].j]) > 0.9 * g.D0)) continue;
             if (keep[k].bs.some(b => angKm(c, caps[b]) > Math.max(0.75 * g.D0, angKm(caps[k], caps[b])))) continue;
+            if (keep[k].fs.some(b => angKm(c, caps[b]) < Math.min(FAR_D * g.D0, angKm(caps[k], caps[b])))) continue;
             const l = Math.hypot(cx[3 * k], cx[3 * k + 1], cx[3 * k + 2]) || 1;
             const dot = (g.xyz[3 * c] * cx[3 * k] + g.xyz[3 * c + 1] * cx[3 * k + 1] + g.xyz[3 * c + 2] * cx[3 * k + 2]) / l;
             const dk = R_KM * Math.acos(Math.max(-1, Math.min(1, dot))), Dk = 0.35 * Math.sqrt(A[k]) + 50;
@@ -822,17 +1136,29 @@ function grow(K, prefs = []) {
         }
         caps = bestC;
         // (and the kingdoms balanced: one too poor to feed itself grows, one far richer than the rest shrinks)
+        // (a kingdom given a size: its land kept near that share of the average — small half, large twice, vast three times)
+        const At = A.reduce((t, v) => t + v, 0) / K;
         for (let k = 0; k < K; k++) {
+            const f = SIZE[prefs[k]?.size];
+            if (f) { const r = A[k] / (f * At); if (r < 0.8) bias[k] = Math.max(-80, bias[k] - 6 * Math.min(3, 1 / r)); else if (r > 1.25) bias[k] = Math.min(80, bias[k] + 6 * Math.min(3, r)); continue; }
             if (F[k] < 0.5 * T) bias[k] = Math.max(-12, bias[k] - 2);
             else if (F[k] > 2 * T) bias[k] = Math.min(12, bias[k] + 2);
         }
         // (two kingdoms meant to share a frontier that don't yet: both grow, the kingdoms between them give way)
         const FR = frontiers(owner, K);
         for (let k = 0; k < K; k++) for (const b of bordersOf(prefs, k)) if (b < K && b > k && !FR[k * K + b]) { bias[k] = Math.max(-20, bias[k] - 4); bias[b] = Math.max(-20, bias[b] - 4); }
+        // (two that must not touch but do: both draw back, the kingdoms round them fill the gap)
+        for (let k = 0; k < K; k++) for (const b of relOf(prefs, k, 'apart')) if (b < K && b > k && FR[k * K + b]) { bias[k] = Math.min(20, bias[k] + 3); bias[b] = Math.min(20, bias[b] + 3); }
     }
-    // (a frontier still missing at the end: a condition unmet)
+    trimToSize(owner, K, prefs);
+    { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c]; g.lastArea = A; }
+    // (a size asked as a condition and missed by far: unmet)
+    if (g.lastArea) { const At = g.lastArea.reduce((t, v) => t + v, 0) / K; for (let k = 0; k < K; k++) { const f = SIZE[prefs[k]?.size]; if (f && prefs[k]?.req?.size) { const r = g.lastArea[k] / (f * At); if ((r < 0.6 || r > 1.7) && !g.unmet.includes(k)) g.unmet.push(k); } } }
+    // (a march between kingdoms that must not touch; then a frontier still missing, or one still there, a condition unmet)
+    keepApart(owner, K, prefs);
     const FR = frontiers(owner, K);
     for (let k = 0; k < K; k++) for (const b of bordersOf(prefs, k)) if (b < K && !FR[k * K + b] && bordersReq(prefs, k, b) && !g.unmet.includes(k)) g.unmet.push(k);
+    for (let k = 0; k < K; k++) for (const b of relOf(prefs, k, 'apart')) if (b < K && FR[k * K + b] && relReq(prefs, k, b, 'apart') && !g.unmet.includes(k)) g.unmet.push(k);
     return { caps, owner, bias };
 }
 
@@ -1098,12 +1424,19 @@ function routes(cities, pop = []) {
             search([[cities[a].c, 0, a]], 'travel', Infinity, port, (c) => { const b = at.get(c); if (b !== undefined && b !== a && inC.has(b)) { cc.set(key(a, b), g.dist[c]); if (!C(a, b) || C(a, b) === Infinity) cost.set(key(a, b), g.dist[c]); return --left <= 0; } return false; });
         }
         const edges = [];
-        for (let i = 0; i < crowns.length; i++) for (let j = i + 1; j < crowns.length; j++) { const a = crowns[i], b = crowns[j], w = Math.min(cc.get(key(a, b)) ?? Infinity, cc.get(key(b, a)) ?? Infinity); if (w < Infinity) edges.push([w, a, b]); }
+        // (kingdoms at odds build no road to each other while there is another way; allies, a vassal and its lord, the first)
+        const rf = (a, b) => [1, 0.5, 4][relation(g.prefs, cities[a].kingdom, cities[b].kingdom)];
+        for (let i = 0; i < crowns.length; i++) for (let j = i + 1; j < crowns.length; j++) { const a = crowns[i], b = crowns[j], w = Math.min(cc.get(key(a, b)) ?? Infinity, cc.get(key(b, a)) ?? Infinity); if (w < Infinity) edges.push([w * (cities[a].kingdom === cities[b].kingdom ? 1 : rf(a, b)), a, b]); }
         edges.sort((x, y) => x[0] - y[0]);
         const rt = new Map(crowns.map(i => [i, i])), fr = (i) => { while (rt.get(i) !== i) i = rt.get(i); return i; };
         const have = new Set(kept.map(([a, b]) => key(a, b)));
         for (const [, a, b] of edges) { const ra = fr(a), rb = fr(b); if (ra === rb) continue; rt.set(ra, rb); const k2 = a < b ? key(a, b) : key(b, a); if (!have.has(k2)) { kept.push(a < b ? [a, b] : [b, a]); have.add(k2); } }
+        // (and allies' capitals, a vassal's and its lord's, always joined straight)
+        for (const [w, a, b] of edges) { if (!cities[a].capital || !cities[b].capital || relation(g.prefs, cities[a].kingdom, cities[b].kingdom) !== 1 || !(w < 3 * ROUTE_DAYS * 10)) continue; const k2 = a < b ? key(a, b) : key(b, a); if (!have.has(k2)) { kept.push(a < b ? [a, b] : [b, a]); have.add(k2); } }
     }
+    // (between kingdoms at odds, no road but the ones the network can't do without: dropped here, the joining below puts
+    // back what it needs)
+    for (let i = kept.length - 1; i >= 0; i--) { const [a, b] = kept[i]; if (relation(g.prefs, cities[a].kingdom, cities[b].kingdom) === 2) kept.splice(i, 1); }
     // (D&D fork: one network — no city, no group of cities, cut off: the groups joined, the nearest pair first, however
     // far — by sea when they must)
     const root = cities.map((_, i) => i), find = (i) => { while (root[i] !== i) i = root[i] = root[root[i]]; return i; };
@@ -1180,6 +1513,25 @@ function roadMasks() {
 }
 
 /** A kingdom's share of each material's sources (0…1), where it holds any. */
+/** A kingdom's sheet (D&D fork): its neighbours, its weather's range, how its wishes stand at its capital. */
+function sheetOf(owner, K, k, cities) {
+    const g = G, FR = g.sheetFR && g.sheetFRfor === owner ? g.sheetFR : (g.sheetFRfor = owner, g.sheetFR = frontiers(owner, K));
+    const neighbours = []; for (let j = 0; j < K; j++) if (j !== k && FR[k * K + j]) neighbours.push(j);
+    const T = [], P = [];
+    for (let c = 0; c < g.n; c++) if (owner[c] === k && g.land[c]) { if (g.tempC[c] === g.tempC[c]) T.push(g.tempC[c]); if (g.rainMm[c] === g.rainMm[c]) P.push(g.rainMm[c]); }
+    T.sort((a, b) => a - b); P.sort((a, b) => a - b);
+    const q = (A, f) => (A.length ? A[Math.min(A.length - 1, Math.floor(f * A.length))] : null);
+    const cap = cities.find(t => t.capital && t.kingdom === k), p = g.prefs?.[k];
+    const met = [];
+    if (cap && p && typeof p === 'object') {
+        for (const [key, , test, kind] of wishes(p)) met.push([kind ? `marks:${kind}` : key, !!test(cap.c), !!p.req?.[key]]);
+        for (const j of relOf(g.prefs, k, 'borders')) met.push([`borders:${j}`, !!FR[k * K + j], relReq(g.prefs, k, j, 'borders')]);
+        for (const j of relOf(g.prefs, k, 'apart')) met.push([`apart:${j}`, !FR[k * K + j], relReq(g.prefs, k, j, 'apart')]);
+        for (const j of relOf(g.prefs, k, 'far')) { const cj = cities.find(t => t.capital && t.kingdom === j); if (cj) met.push([`far:${j}`, angKm(cap.c, cj.c) >= 0.9 * FAR_D * (g.D0 || 3000), relReq(g.prefs, k, j, 'far')]); }
+        const nj = nearOf(p); if (nj >= 0) { const cj = cities.find(t => t.capital && t.kingdom === nj); if (cj) met.push([`near:${nj}`, angKm(cap.c, cj.c) <= 0.9 * (g.D0 || 3000), nearReq(p)]); }
+    }
+    return { neighbours, tempLo: q(T, 0.05), tempHi: q(T, 0.95), tempMid: q(T, 0.5), rainLo: q(P, 0.1), rainHi: q(P, 0.9), rainMid: q(P, 0.5), met };
+}
 function holdsOf(owner, k) {
     const out = {};
     for (const id of Object.keys(G.ores || {})) {
@@ -1207,19 +1559,28 @@ function linkRoute(a, b, from, to, ports) {
 }
 
 // ── the whole realm ──
+/** The kingdom nearest a cell at sea (a strait's, a lake's): the owner of the nearest land within ~5 cells. */
+function nearestOwner(owner, c0) {
+    const g = G, { GW, GH } = g, y0 = (c0 / GW) | 0, x0 = c0 - y0 * GW;
+    let best = -1, bd = Infinity;
+    for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const y = y0 + dy; if (y < 0 || y >= GH) continue; const c = y * GW + ((x0 + dx + GW) % GW); if (owner[c] >= 0 && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = owner[c]; } }
+    return best;
+}
 function finishRealm(cities, owner, K, extra = {}) {
     say(3);
     const { kingdoms, cityPop } = describe(cities, owner, K);
     pickSeats(cities, cityPop, K);
-    const R = routes(cities, cityPop);
     const g = G;
+    g.owner = owner;
+    const R = routes(cities, cityPop);
     return {
         owner, K,
         cities: cities.map((t, i) => ({ c: t.c, u: ((t.c % g.GW) + 0.5) / g.GW, v: (((t.c / g.GW) | 0) + 0.5) / g.GH, capital: !!t.capital, seat: !!t.seat, kingdom: t.kingdom, port: !!t.port, people: Math.round(cityPop[i]),
             river: g.riverQ[t.c] >= CROSS_Q, heightM: Math.round(g.heightM[t.c]), koppen: g.codes[g.koppen[t.c]] })),
-        kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0, holds: holdsOf(owner, i) })),
+        kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0, holds: holdsOf(owner, i), ...sheetOf(owner, K, i, cities) })),
         // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
         routes: R.map(routeOut),
+        marks: landmarks().map(m => ({ kind: m.kind, u: ((m.c % g.GW) + 0.5) / g.GW, v: (((m.c / g.GW) | 0) + 0.5) / g.GH, size: m.size, kingdom: owner[m.c] >= 0 ? owner[m.c] : nearestOwner(owner, m.c) })),
         ...extra,
     };
 }
@@ -1233,14 +1594,25 @@ function autoRealm(K, N, prefs = [], mins = [], ports = []) {
 
 /** The realm from cities placed by hand (`list`: [{u, v, capital}]): the kingdoms grown from their capitals, the rest
  *  each in the kingdom it stands in. */
-function fixedRealm(list) {
+/** The kingdoms' land as kept (D&D fork): runs of "kingdom+1" × count, base 36, row after row ("a.b,c.d,…"). */
+function unrle(text, n) {
+    const out = new Int16Array(n).fill(-1);
+    let i = 0;
+    for (const run of text.split(',')) { if (!run) continue; const [v, l] = run.split('.'); const k = parseInt(v, 36) - 1, L = parseInt(l, 36); out.fill(k, i, Math.min(n, i + L)); i += L; }
+    return i === n ? out : null;
+}
+function fixedRealm(list, ownerText = null) {
     const g = G, cell = (u, v) => Math.min(g.GH - 1, Math.max(0, Math.floor(v * g.GH))) * g.GW + Math.min(g.GW - 1, Math.max(0, Math.floor(u * g.GW)));
     let pts = list.map(t => ({ c: cell(t.u, t.v), capital: !!t.capital }));
     // (a city in the sea moves to the nearest land)
     for (const t of pts) if (!g.land[t.c]) { let best = t.c, bd = Infinity; const y0 = (t.c / g.GW) | 0, x0 = t.c % g.GW; for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) { const yy = y0 + dy; if (yy < 0 || yy >= g.GH) continue; const c = yy * g.GW + ((x0 + dx + g.GW) % g.GW); if (g.land[c] && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = c; } } t.c = best; }
     if (!pts.some(t => t.capital) && pts.length) pts[0].capital = true;
     const caps = pts.filter(t => t.capital).map(t => t.c);
-    const owner = partition(caps, new Array(caps.length).fill(0));
+    // (the land as it was kept, when it was: the very same kingdoms; else grown again from their capitals)
+    let owner = ownerText ? unrle(ownerText, g.n) : null;
+    if (owner) { const K = caps.length; for (let c = 0; c < g.n; c++) if (owner[c] >= K) owner[c] = -1; }
+    if (!owner) owner = partition(caps, new Array(caps.length).fill(0));
+    else G.dist.fill(0);
     const cities = pts.map((t, i) => ({ c: t.c, capital: t.capital, seat: !!list[i].seat, kingdom: t.capital ? caps.indexOf(t.c) : owner[t.c] }));
     // (a city outside every kingdom joins the nearest capital's)
     for (const t of cities) if (t.kingdom < 0) { let best = 0, bd = Infinity; caps.forEach((c, k) => { const d = angKm(c, t.c); if (d < bd) { bd = d; best = k; } }); t.kingdom = best; }

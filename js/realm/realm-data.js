@@ -10,6 +10,7 @@ import { farmPlace, harvestsAt, hasHarvests, Staple, STAPLES, CROPS } from '../.
 import { gatherGround, gatherAt, livingPlace } from '../../v2/js/farming/living.js';
 import { materialGrids, MATERIALS } from '../dnd/composer.js';
 import { KOPPEN_CLASSES } from '../../v2/js/climate/koppen.js';
+import { Rock } from '../../v2/js/geology/rocks.js';
 import { farmOptions } from '../../v2/js/evolution/farming-view.js';
 
 export const GW = 1024, GH = 512;
@@ -118,7 +119,14 @@ export function realmGrid(fin) {
         }
         ores[m.id] = o;
     }
-    return { GW, GH, ores, flowU, flowV, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
+    // ── the volcanic rock (D&D fork): each cell's share of young volcanic rock, 0…255 — where the volcanoes are ──
+    const Gq = R.geology, volc = new Uint8Array(n);
+    if (Gq?.rock) for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+        const y0 = Math.floor(y / GH * Gq.h), y1 = Math.max(y0 + 1, Math.floor((y + 1) / GH * Gq.h)), x0 = Math.floor(x / GW * Gq.w), x1 = Math.max(x0 + 1, Math.floor((x + 1) / GW * Gq.w));
+        let v = 0, t = 0; for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) { t++; if (Gq.rock[yy * Gq.w + xx] === Rock.VOLCANIC) v++; }
+        volc[y * GW + x] = Math.round(255 * v / Math.max(1, t));
+    }
+    return { GW, GH, ores, volc, flowU, flowV, land, lake, heightM, peakM, koppen, tempC, rainMm, riverQ, wetland, people, lifestyle, staple, windU, windV, curU, curV, seaIce };
 }
 const KOPPEN_ID_EF = KOPPEN_CLASSES.findIndex(k => k.code === 'EF');
 /** The Köppen codes by index (the worker reads the letters). */

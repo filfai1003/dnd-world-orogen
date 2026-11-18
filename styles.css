@@ -1682,6 +1682,7 @@ body.edits-pending #hoverInfo { bottom: 112px; }
 .dnd-leg-row { display: block; }
 .dnd-leg-row:has(.dnd-leg-mat) { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 4px; }
 .dnd-leg-mat { display: inline-flex; align-items: center; gap: 4px; }
+.dnd-leg-icon { width: 18px; height: 18px; }
 .dnd-leg-note { color: var(--muted); font-size: 11px; margin-top: 4px; }
 #dndRight .realm-btn, #dndRight .toggle-label { font-family: var(--font-ui); }
 .dnd-right {
@@ -1806,3 +1807,37 @@ body.dnd-no-degrees .gf-num { display: none; }
 .dnd-way-dot.heavy { background: var(--accent); }
 .dnd-way-dot.ship { background: var(--logo-blue); }
 @media (max-width: 768px) { .dnd-trip-way { min-height: 44px; } }
+
+/* D&D fork: a kingdom's sheet */
+.dnd-sheet { position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 120px); overflow: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-paper); padding: 16px 20px; font: 400 13px/1.45 var(--font-ui); }
+.dnd-sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.dnd-sheet-head h3 { flex: 1; margin: 0; font: 600 22px/1.2 var(--font-display); }
+.dnd-sheet-head .dnd-trip-x { position: static; }
+.dnd-sheet-head .realm-btn { width: auto; flex: none; padding: 4px 10px; }
+.dnd-sheet dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+.dnd-sheet dt { font-weight: 600; color: var(--muted); }
+.dnd-sheet dd { margin: 0; }
+.realm-sheet-btn { margin-left: 6px; padding: 2px 8px; font-size: 11px; }
+@media (max-width: 768px) { .dnd-sheet { top: auto; bottom: 0; transform: translateX(-50%); max-height: 80vh; border-radius: 12px 12px 0 0; } .dnd-sheet dl { grid-template-columns: 1fr; } .dnd-sheet-head .realm-btn, .dnd-sheet-head .dnd-trip-x { min-height: 44px; } }
+/* D&D fork: a journey's dangers and stops */
+.dnd-danger { display: inline-block; width: fit-content; align-self: flex-start; margin-left: 6px; padding: 0 6px; border-radius: 8px; font: 600 10px/1.6 var(--font-ui); text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid currentColor; }
+.dnd-danger.low { color: var(--muted); }
+.dnd-danger.moderate { color: var(--logo-ochre); }
+.dnd-danger.high { color: var(--accent); }
+.dnd-danger.extreme { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.dnd-trip-hazards, .dnd-trip-legs { margin: 6px 0; font-size: 12px; line-height: 1.45; }
+.dnd-trip-legs { color: var(--muted); }
+.dnd-trip-undo { background: none; border: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+@media (max-width: 768px) { .dnd-trip-undo { min-height: 44px; } }
+/* D&D fork: the political map's picture, and the saved maps */
+.realm-files { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; padding-top: 10px; border-top: 1px solid var(--rule); }
+.realm-files-head { margin-top: 6px; font: 600 12px/1.2 var(--font-ui); color: var(--ink); }
+.realm-save-name { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); color: var(--ink); font: 400 12px/1.4 var(--font-ui); }
+.realm-saves { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.realm-saves li { display: grid; grid-template-columns: 72px 1fr; gap: 4px 8px; align-items: center; padding: 4px; border: 1px solid var(--rule); border-radius: 8px; }
+.realm-saves img { width: 72px; height: 36px; object-fit: cover; border-radius: 4px; grid-row: span 2; }
+.realm-saves .realm-save-title { font: 600 12px/1.2 var(--font-ui); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.realm-saves .realm-save-date { color: var(--muted); font-weight: 400; font-size: 11px; }
+.realm-saves .realm-save-acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.realm-saves .realm-save-acts button { padding: 1px 6px; font-size: 11px; width: auto; }
+@media (max-width: 768px) { .realm-saves .realm-save-acts button, .realm-save-name { min-height: 44px; } }

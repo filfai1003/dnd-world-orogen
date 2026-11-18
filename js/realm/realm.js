@@ -37,8 +37,6 @@ const WISHES = [
     ['waters', 'Seas', [['', 'Any'], ['calm', 'Calm seas'], ['rough', 'Rough, stormy seas']]],
     ['currents', 'Currents', [['', 'Any'], ['strong', 'Strong sea currents'], ['weak', 'Weak sea currents']]],
     ['fertility', 'Fertility', [['', 'Any'], ['high', 'Very fertile land'], ['low', 'Poor land']]],
-    ['hold', 'Holds the sources', [['', 'None'], ['gems', 'Gems'], ['iron', 'Iron'], ['copper', 'Copper'], ['tin', 'Tin'], ['silver', 'Silver'], ['gold', 'Gold'], ['salt', 'Salt'], ['coal', 'Coal']]],
-    ['ore', 'Riches', [['', 'Any'], ['gems', 'Main gem mines'], ['iron', 'Main iron mines'], ['copper', 'Main copper mines'], ['tin', 'Main tin mines'], ['silver', 'Main silver mines'], ['gold', 'Main gold mines'], ['salt', 'Main salt'], ['coal', 'Main coal']]],
 ];
 /** A kingdom's wishes in a line — its conditions marked "must". */
 /** A journey's ways on the map: on foot, canoe, light vehicle, heavy vehicle, travelling boat — [colour, dash]. */
@@ -110,13 +108,12 @@ function markIcon(kind) {
     const x = c.getContext('2d'); markGlyph(x, kind, 18, 20, 11);
     return c.toDataURL();
 }
-const HOLD_NAMES = { gems: 'Gems', iron: 'Iron', copper: 'Copper', tin: 'Tin', silver: 'Silver', gold: 'Gold', salt: 'Salt', coal: 'Coal' };
 const wishText = (p, names = []) => [...WISHES.map(([key, , opts]) => (p?.[key] ? [key, opts.find(o => o[0] === p[key])?.[1].replace(/ \(.*\)$/, '')] : null)),
     p?.near !== undefined && p?.near !== '' && names[+p.near] ? ['near', `near ${names[+p.near]}`] : null,
     p?.vassal !== undefined && p?.vassal !== '' && names[+p.vassal] ? ['vassal', `vassal of ${names[+p.vassal]}`] : null,
     Array.isArray(p?.marks) && p.marks.length ? ['marks', `holds ${p.marks.map(m => MARK_INFO[m]?.[0].toLowerCase() ?? m).join(', ')}`] : null,
     ...REL.map(([key, label]) => (Array.isArray(p?.[key]) && p[key].some(j => names[j]) ? [key, `${label.toLowerCase()} ${p[key].filter(j => names[j]).map(j => names[j]).join(', ')}`] : null))]
-    .filter(Boolean).map(([key, t]) => (key === 'hold' ? [key, `holds the ${t.toLowerCase()} sources`] : [key, t])).map(([key, t]) => (p.req?.[key] ? `must: ${t}` : t)).join(' · ');
+    .filter(Boolean).map(([key, t]) => (p.req?.[key] ? `must: ${t}` : t)).join(' · ');
 
 const LIFE_IT = ['Uninhabited', 'Farming', 'Herding', 'Hunting, fishing and gathering'];
 const STAPLE_IT = ['Nothing', 'Paddy grain (rice)', 'Cool-climate grain (wheat, barley, rye)', 'Warm-climate grain (maize, millet, sorghum)', 'Roots and tubers', 'Livestock (milk, meat, wool)', 'Fish', 'Game and wild fruit'];
@@ -307,7 +304,7 @@ export class Realm {
         });
         return best;
     }
-    /** The menu of a route or a city right-clicked: take the route away, or the city's routes by land. */
+    /** The menu of a route or a city right-clicked: take the route away, the city's routes by land, or the city itself. */
     routeMenu(e) {
         document.querySelector('.realm-menu')?.remove();
         const ci = this.cityAtScreen(e.clientX, e.clientY), ri = ci < 0 ? this.routeAtScreen(e.clientX, e.clientY) : -1;
@@ -318,11 +315,13 @@ export class Realm {
         if (ri >= 0) { const r = d.routes[ri]; items.push(['one', `Remove this route (${nm(r.a)} – ${nm(r.b)})`]); }
         if (ci >= 0) {
             const n = d.routes.filter(r => (r.a === ci || r.b === ci) && byLand(r)).length;
-            items.push(['land', n ? `Remove the land routes of ${nm(ci)} (${n})` : `${nm(ci)} has no land routes`]);
+            items.push(['land', n ? `Remove the land routes of ${nm(ci)} (${n})` : `${nm(ci)} has no land routes`, !n]);
+            // (a kingdom's first capital stays: its kingdom stands round it)
+            items.push(['city', d.cities[ci].capital ? `${nm(ci)} is a kingdom's capital: it can't be removed` : `Remove the city ${nm(ci)}`, !!d.cities[ci].capital]);
         }
         const box = document.createElement('div');
         box.className = 'realm-menu';
-        box.innerHTML = items.map(([k, l]) => `<button type="button" data-k="${k}"${/has no/.test(l) ? ' disabled' : ''}>${l}</button>`).join('');
+        box.innerHTML = items.map(([k, l, off]) => `<button type="button" data-k="${k}"${off ? ' disabled' : ''}>${l}</button>`).join('');
         box.style.left = `${Math.min(innerWidth - 300, e.clientX + 6)}px`; box.style.top = `${Math.min(innerHeight - 100, e.clientY + 6)}px`;
         document.body.appendChild(box);
         const close = () => { box.remove(); removeEventListener('pointerdown', away, true); };
@@ -330,6 +329,7 @@ export class Realm {
         setTimeout(() => addEventListener('pointerdown', away, true), 0);
         box.addEventListener('click', (ev) => {
             const k = ev.target.closest('button')?.dataset.k; if (!k) return;
+            if (k === 'city') { close(); if (!this.busy) { this.removeCity(ci); this.fixed(); } return; }
             const gone = k === 'one' ? [d.routes[ri]] : d.routes.filter(r => (r.a === ci || r.b === ci) && byLand(r));
             this.removeRoutes(gone);
             close();
@@ -538,7 +538,6 @@ export class Realm {
         const ss = K.selfSufficiency;
         rows.push(['Food', `${ss >= 1.3 ? 'a surplus' : ss >= 1 ? 'just enough' : 'not enough: relies on its neighbours'} (its land could feed ${ss.toLocaleString('en-GB', { maximumFractionDigits: 1 })} times its people) · ${K.byStaple.map((v, i) => [i, v]).filter(([i, v]) => i && pct(v, stT) >= 5).sort((a, b) => b[1] - a[1]).map(([i, v]) => `${STAPLE_IT[i]} ${pct(v, stT)}%`).join(', ') || '—'}`]);
         rows.push(['Ways of life', K.byLife.map((v, i) => [i, v]).filter(([i, v]) => i && pct(v, lifeT) >= 3).sort((a, b) => b[1] - a[1]).map(([i, v]) => `${LIFE_IT[i]} ${pct(v, lifeT)}%`).join(' · ') || '—']);
-        if (Object.keys(K.holds || {}).length) rows.push(['Sources held', Object.entries(K.holds).sort((a, b) => b[1] - a[1]).map(([id, v]) => `${HOLD_NAMES[id] ?? id} ${pct(v, 1)}% of the world's`).join(' · ')]);
         const marks = (d.marks || []).filter(m => m.kingdom === k);
         if (marks.length) rows.push(['Notable places', marks.map(m => this.markName(m)).join(' · ')]);
         rows.push(['Neighbours', (K.neighbours || []).map(j => `${nm(j)} (${relWord(j)})`).join(' · ') || 'none by land']);
@@ -568,7 +567,6 @@ export class Realm {
     /** The legend's row of notable places (or ''). */
     markLegend() {
         const d = this.data;
-        if (d?.holdMarks?.length && this.show.fills !== false) { const ks = [...new Set(d.holdMarks.map(h => h.kingdom))]; return `<div class="dnd-leg-note">◆ Sources held in another kingdom's land: ${ks.map(k => `${esc(this.names.kingdoms[k] ?? '')} (${(HOLD_NAMES[d.holdMarks.find(h => h.kingdom === k).id] ?? '').toLowerCase()})`).join(', ')}</div>`; }
         if (!d || this.show.marks === false || !d.marks?.length) return '';
         const kinds = Object.keys(MARK_INFO).filter(k => d.marks.some(m => m.kind === k));
         return `<div class="dnd-leg-row">${kinds.map(k => `<span class="dnd-leg-mat"><img class="dnd-leg-icon" src="${markIcon(k)}" alt="">${MARK_INFO[k][0]}</span>`).join('')}</div>`;
@@ -699,7 +697,14 @@ export class Realm {
     /** A city crowned: the kingdom's capital, or one of its other capitals. */
     markSeats() { this.data?.cities.forEach((c, i) => { c.seat = !c.capital && !!this.names.seats?.[i]; c.crown = c.capital || c.seat; }); this.runsFor = null; }
     romanOf(k) { const r = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI']; return r[k] ?? String(k + 1); }
-    removeCity(i) { this.data.cities.splice(i, 1); this.names.cities.splice(i, 1); }
+    /** A city taken away: the lists by city shift down past it, the routes added or removed by hand with them. */
+    removeCity(i) {
+        this.data.cities.splice(i, 1); this.names.cities.splice(i, 1);
+        this.names.seats?.splice(i, 1);
+        if (this.trip) this.clearTrip();
+        const E = this.names.routeEdits;
+        if (E) for (const key of ['removed', 'added']) E[key] = (E[key] || []).filter(([a, b]) => a !== i && b !== i).map(([a, b]) => [a > i ? a - 1 : a, b > i ? b - 1 : b]);
+    }
 
     // ── kept in the browser, per planet code ──
     storeKey() { const c = this.getCode(); return c ? `dnd-realm:${c}` : null; }
@@ -775,7 +780,6 @@ export class Realm {
                     <div><b>Cities</b> ${K.cities} · <b>Estimated population</b> ${fmt(K.people)} · <b>Area</b> ${fmt(K.area)} km² · <b>Ports</b> ${K.ports}</div>
                     <div><b>Food</b> ${ssWord}: its land could feed ~${fmt(K.food)} people, ${ssNum} times its population</div>
                     <div><b>How it eats</b> ${lives || '—'}</div>
-                    ${Object.keys(K.holds || {}).length ? `<div><b>Sources held</b> ${Object.entries(K.holds).sort((a, b) => b[1] - a[1]).map(([id, v]) => `${HOLD_NAMES[id] ?? id} ${pct(v, 1)}%`).join(' · ')}</div>` : ''}
                     <div><b>Staple foods</b> ${staples || '—'}</div>
                     <div><b>Climate</b> ${climate || '—'}</div>
                     <div><b>Land</b> mountains ${pct(K.mountains, K.area)}% · coast ~${fmt(K.coastKm)} km · navigable rivers ~${fmt(K.navigable)} km${K.wild > 0 ? ` · barren ${pct(K.wild, K.area)}%` : ''}</div>
@@ -1088,12 +1092,6 @@ export class Realm {
             if (c.port) { ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.strokeStyle = 'rgba(25,45,95,0.95)'; ctx.stroke(); }
             if (dr && dr.i === i) { ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 2 * Math.PI); ctx.strokeStyle = 'rgba(158,43,37,0.9)'; ctx.lineWidth = 2; ctx.stroke(); }
             placed.push([x - r, y - r, x + r, y + r]);
-        }
-        // (the sources a kingdom holds in another's land: a small diamond in the holder's colour)
-        if (sh.fills !== false) for (const h of d.holdMarks || []) {
-            const q = pr.at(h.u, h.v); if (!inView(q)) continue;
-            ctx.beginPath(); ctx.moveTo(q[0], q[1] - 5); ctx.lineTo(q[0] + 4, q[1]); ctx.lineTo(q[0], q[1] + 5); ctx.lineTo(q[0] - 4, q[1]); ctx.closePath();
-            ctx.fillStyle = kcol(h.kingdom); ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.stroke();
         }
         // (the notable places: their marks, then — after the towns' names — their names, all or none)
         const marks = sh.marks !== false ? (d.marks || []).map(m => ({ m, q: pr.at(m.u, m.v) })).filter(o => inView(o.q)) : [];

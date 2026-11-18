@@ -1,6 +1,6 @@
 // The chrome Generate's and Import's pages share on the shared core (plans/SHARED_CORE_PLAN.md U3, U4): site storage that
 // tolerates a browser forbidding it, the sliders' value bubbles and the Detail warning, the side panel (collapsed on a
-// desktop, a bottom sheet dragged on a phone), the build overlay with its progress, and the tutorial.
+// desktop, a bottom sheet dragged on a phone), the build overlay with its progress.
 
 import { holdControls, clearBuildError } from './build-error.js';
 
@@ -105,23 +105,3 @@ export function buildOverlay() {
     return o;
 }
 
-/**
- * The tutorial (#tutorialOverlay): its steps, Back and Next, the "?" to open it, opened after the first planet on a first
- * visit (`firstDone`: an element that hears 'generate-done'). `touchStep2`: step 2's words on a touch device.
- */
-export function tutorial({ key, firstDone, isTouch, touchStep2 = null }) {
-    const overlay = $('tutorialOverlay'), card = $('tutorialCard'), steps = card.querySelectorAll('.tutorial-step'), dots = card.querySelectorAll('.dot');
-    let current = 0;
-    const show = (i) => { current = i; steps.forEach((s, k) => s.classList.toggle('active', k === i)); dots.forEach((d, k) => d.classList.toggle('active', k === i)); $('tutorialBack').disabled = i === 0; $('tutorialNext').textContent = i === steps.length - 1 ? 'Get started' : 'Next'; card.scrollTop = 0; };
-    const open = () => { show(0); overlay.classList.remove('hidden'); };
-    const close = () => { overlay.classList.add('hidden'); store.set(key, '1'); };
-    $('tutorialNext').addEventListener('click', () => (current < steps.length - 1 ? show(current + 1) : close()));
-    $('tutorialBack').addEventListener('click', () => { if (current > 0) show(current - 1); });
-    $('tutorialClose').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-    addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close(); });
-    $('helpBtn')?.addEventListener('click', open);
-    if (isTouch && touchStep2) { const p = card.querySelector('.tutorial-step[data-step="2"] p'); if (p) p.innerHTML = touchStep2; }
-    overlay.classList.add('hidden');
-    if (!store.get(key)) firstDone.addEventListener('generate-done', () => setTimeout(open, 600), { once: true });
-}

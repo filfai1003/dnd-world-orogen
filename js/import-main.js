@@ -159,7 +159,7 @@ pv.onPointer((e) => {
     const p = world ? pv.placeUnder(e) : null;
     if (!p) { pv.hover(null); return; }
     const r = pv.cellUnder(world.tMesh, p);
-    pv.hover(pv.readoutLines({ p, fin: pv.shows(world.fin), heightKm: world.heightKm[r], head: [...realm.hoverLines(p, e), ...(composer?.hoverLines(e) ?? [])] }));
+    pv.hover(pv.readoutLines({ p, fin: pv.shows(world.fin), heightKm: world.heightKm[r], head: [...realm.hoverLines(p, e)] }));
 });
 
 // ── the heightmap: the file, its preview, Import (Earth's at first) ──

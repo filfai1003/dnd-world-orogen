@@ -320,48 +320,6 @@
     <div id="layerBar" class="layer-bar"></div>
     <div id="legendCard" class="legend-card" hidden></div>
     <select id="mobileViewSwitch" class="mobile-view-switch" aria-label="Layer"></select>
-    <button id="helpBtn" title="Tutorial" aria-label="Tutorial">?</button>
-
-    <div id="tutorialOverlay" class="hidden">
-        <div id="tutorialCard">
-            <button id="tutorialClose" aria-label="Close">&times;</button>
-            <div class="tutorial-step" data-step="0">
-                <h3>Welcome to World Orogen</h3>
-                <p>Procedural planets inspired by real tectonics, erosion, and climate.</p>
-                <p>Every world is one of a kind — with believable continents, mountains, ocean trenches, and volcanic islands. Build one in seconds, tweak it until it's yours.</p>
-            </div>
-            <div class="tutorial-step" data-step="1">
-                <h3>Shape your world</h3>
-                <p>Use the <strong>Shape your world</strong> sliders to control detail, plates, continents, and roughness, then hit <strong>Build new world</strong>. The <strong>Detail</strong> slider only changes rendering resolution &mdash; continent shapes stay the same, so you can iterate quickly at low detail and crank it up when the planet looks good. Expand <strong>Terrain sculpting</strong> to fine-tune erosion and smoothing &mdash; these can be reapplied instantly with the <strong>&#x21bb;</strong> button.</p>
-                <p>The planet shows in seconds; a few seconds later its climate, rivers and lakes, ice age, rocks and food are worked out in the background, and the Satellite, Climate, Geology and Food views open.</p>
-            </div>
-            <div class="tutorial-step" data-step="2">
-                <h3>Explore &amp; edit</h3>
-                <p><strong>Drag</strong> to rotate the globe. <strong>Scroll</strong> to zoom in and out. <strong>Ctrl-click</strong> plates (&#8984;-click on a Mac) to mark them for reshaping &mdash; select multiple, then hit <strong>Rebuild</strong> to apply all at once. Ctrl-click again to undo a pending selection. <strong>Hover</strong> any place to see its plate and crust, height, river or lake, climate &mdash; and on the Geology and Food views its rock, ores and what the land could feed.</p>
-            </div>
-            <div class="tutorial-step" data-step="3">
-                <h3>Visualize your world</h3>
-                <p>Switch between <strong>Terrain</strong>, <strong>Satellite</strong>, <strong>Climate</strong>, <strong>Geology</strong>, <strong>Food</strong>, <strong>Heightmap</strong> and <strong>Plates</strong> with the tabs over the planet. <strong>Climate</strong> opens its own row of maps &mdash; K&ouml;ppen, temperature, rain, wind, currents, and under <strong>More&hellip;</strong> pressure, sea ice, aridity, growing season and more &mdash; each for the year, January or July (the Satellite view too); <strong>Geology</strong> its rocks, deposits and what each technological age could reach; <strong>Food</strong> its farmland, staple foods, ways of life and people. The arrow at the tabs' left opens the view options above them: <strong>Globe</strong> or <strong>Map</strong>, the map in any of ten <strong>projections</strong>, its centre, the grid, the terrain's <strong>Colours</strong>, the hillshade, the clouds and the rivers; the world's past is in <strong>Inspect (advanced)</strong> in the sidebar.</p>
-            </div>
-            <div class="tutorial-step" data-step="4">
-                <h3>Save &amp; share</h3>
-                <p>Every planet gets a unique <strong>planet code</strong> shown below the Build button &mdash; including any plates you've edited. <strong>Copy</strong> it to share with others, or <strong>paste</strong> a code and click <strong>Load</strong> to recreate someone else's world. You can also share the URL directly.</p>
-                <p>Use <strong>Export map</strong> to save any map the page draws &mdash; the terrain, satellite (with clouds or without), climate zones, every climate layer, rivers and lakes, heightmaps, a hillshade, plates, rocks, deposits, food &mdash; as <strong>Colour</strong> (as shown) or as <strong>Data</strong> (16-bit greyscales on fixed scales, for other tools), for the year, January or July, in ten map projections, centred where you like. One map saves as a PNG; several as a ZIP with a README that explains every file.</p>
-            </div>
-            <div class="tutorial-dots">
-                <span class="dot active" data-dot="0"></span>
-                <span class="dot" data-dot="1"></span>
-                <span class="dot" data-dot="2"></span>
-                <span class="dot" data-dot="3"></span>
-                <span class="dot" data-dot="4"></span>
-            </div>
-            <div class="tutorial-nav">
-                <button id="tutorialBack" class="btn-ghost" disabled>Back</button>
-                <button id="tutorialNext" class="btn-primary">Next</button>
-            </div>
-        </div>
-    </div>
-
     <div id="exportOverlay" class="hidden">
         <div id="exportCard">
             <button id="exportClose" aria-label="Close">&times;</button>
@@ -369,81 +327,6 @@
         </div>
     </div>
 
-    <div id="surveyOverlay" class="hidden">
-        <div id="surveyCard">
-            <button id="surveyClose" aria-label="Close">&times;</button>
-            <h3>Thanks for exploring!</h3>
-            <p>You've spent some real time with World Orogen &mdash; that means a lot. If you have a minute, I'd love to hear what you think.</p>
-            <div class="survey-actions">
-                <button id="surveyDismiss" class="btn-ghost">Maybe later</button>
-                <a id="surveyLink" href="https://docs.google.com/forms/d/e/1FAIpQLScFSryT8Uom4jMkpb-YQnyjHMSWqZmDDT3bSOSabHovsjKL7A/viewform?usp=dialog" target="_blank" rel="noopener" class="btn-primary">Take the survey</a>
-            </div>
-        </div>
-    </div>
-
-    <div id="whatsNewOverlay" class="hidden">
-        <div id="whatsNewCard">
-            <button id="whatsNewClose">&times;</button>
-            <div class="whatsnew-step" data-step="0">
-                <h3>What's new in World Orogen 3.0</h3>
-                <p>Every page has a <strong>new look</strong>, in <strong>Paper</strong> or <strong>Night</strong>, the Studio included. <strong>Generate</strong> is rebuilt on Evolution's ground: its worlds now have a past, with plates that move and mountains worn to their age, and they get Evolution's <strong>Geology</strong> and <strong>Food</strong> tabs. In <strong>Evolution</strong>, ridges are more varied, deposits are coloured by metal family, and <strong>Geology</strong> is out of beta.</p>
-                <p class="whatsnew-warn"><strong>Heads up:</strong> A saved Generate planet code builds the same continents in the same places, with new coasts, mountains and rivers. An Evolution link gives the same history, its ridges drawn a little differently. To see either exactly as it was, open it at orogen.studio/v/2.3/generate or orogen.studio/v/2.3/evolution.</p>
-            </div>
-            <div class="whatsnew-step" data-step="1">
-                <h3>A new look</h3>
-                <p>Every page is redrawn, calmer, so the planet is the star.</p>
-                <ul class="whatsnew-list">
-                    <li><strong>Paper and Night</strong> &mdash; A light and a dark theme. They follow your device; the sun-and-moon switch in the top bar overrides it, and every page remembers your choice.</li>
-                    <li><strong>The Studio</strong> &mdash; The home page turns a planet through its views, and shows each tool with two worlds made in it.</li>
-                    <li><strong>A calmer globe</strong> &mdash; Lit from the upper left wherever you turn it, with a thin rim of air, on the page's own colour. Stars are still an option.</li>
-                    <li><strong>The degree ring</strong> &mdash; A gold ring with its degrees around the globe, and a frame with degrees around every map, in every projection.</li>
-                    <li><strong>Loading that says what's happening</strong> &mdash; In Evolution, each stage of Add detail is named as it runs.</li>
-                </ul>
-            </div>
-            <div class="whatsnew-step" data-step="2">
-                <h3>Generate, rebuilt</h3>
-                <p>Generate now builds its worlds on Evolution's ground, and still takes seconds.</p>
-                <ul class="whatsnew-list">
-                    <li><strong>Plates that move</strong> &mdash; The pieces you edit are grouped into plates that carry continents and ocean together. Most coasts are passive, and each continent has an active margin.</li>
-                    <li><strong>A past</strong> &mdash; Continents are assembled from their pieces, with old mountain belts along their seams, cratons, hotspot chains and flood basalts. Coasts on either side of an ocean fit together.</li>
-                    <li><strong>Mountains with a cause</strong> &mdash; Andean margins, collisions, island arcs and rift valleys, carved into massifs, each worn down to its age.</li>
-                    <li><strong>Geology and Food</strong> &mdash; Evolution's Geology and Food (beta) tabs, with their exports and readout.</li>
-                    <li><strong>Editing</strong> &mdash; Ctrl-click a plate and Rebuild: the edit changes the place you edit and little else. And in every tool, the poles no longer smear.</li>
-                </ul>
-            </div>
-            <div class="whatsnew-step" data-step="3">
-                <h3>Also in 3.0</h3>
-                <ul class="whatsnew-list">
-                    <li><strong>Varied ridges in Evolution</strong> &mdash; Mountain ridges bend, rise and fall at every scale, with peaks and saddles along each one, and old belts are a little less even. The history itself is the same.</li>
-                    <li><strong>Deposits by metal family</strong> &mdash; Four colours instead of eleven: iron and alloy, base, precious and salt, each with its row in the legend.</li>
-                    <li><strong>Geology, out of beta</strong> &mdash; Its rocks, deposits and ages. Food stays in beta.</li>
-                    <li><strong>Import</strong> &mdash; Your map gets the new Satellite view, with clouds, and Food (beta). Import Heightmap is now just Import.</li>
-                    <li><strong>Phones, tablets and keyboards</strong> &mdash; Touch targets of 44&nbsp;px on phones, plate editing on tablets, and dialogs that hold the keyboard's focus.</li>
-                </ul>
-            </div>
-            <div class="whatsnew-step" data-step="4">
-                <h3>Since 2.0</h3>
-                <ul class="whatsnew-list">
-                    <li><strong>Evolution</strong> &mdash; A planet's whole tectonic history, over up to one and a half billion years: play it like a film, share its link, or save it as a planet file and open it again later.</li>
-                    <li><strong>Add detail</strong> &mdash; Any moment sculpted again, finely: rivers through the seasons, glaciers and fjords, sand seas, and a climate of its own, with its clouds.</li>
-                    <li><strong>Export anything</strong> &mdash; Every map on every page, as colour or as 16-bit data, in ten map projections.</li>
-                    <li><strong>Older versions online</strong> &mdash; Each version since 2.1 stays at orogen.studio/v/&lt;version&gt;/, so links and planet files open as they were made.</li>
-                </ul>
-                <p class="whatsnew-follow">World Orogen is now on <a href="https://bsky.app/profile/did:plc:quknpdz3qcoid5uh4qv27w2t" target="_blank" rel="noopener">Bluesky</a>, <a href="https://x.com/worldorogen" target="_blank" rel="noopener">X</a> and <a href="https://www.threads.com/@orogen.studio" target="_blank" rel="noopener">Threads</a>: new releases, work in progress and sneak peeks of what's coming. If it's been useful to you, you can also support it on <a href="https://ko-fi.com/orogenstudio" target="_blank" rel="noopener">Ko-fi</a>. It stays free either way.</p>
-            </div>
-            <div class="tutorial-dots">
-                <span class="dot active" data-dot="0"></span>
-                <span class="dot" data-dot="1"></span>
-                <span class="dot" data-dot="2"></span>
-                <span class="dot" data-dot="3"></span>
-                <span class="dot" data-dot="4"></span>
-            </div>
-            <div class="tutorial-nav">
-                <button id="whatsNewBack" class="btn-ghost" disabled>Back</button>
-                <button id="whatsNewNext" class="btn-primary">Next</button>
-            </div>
-        </div>
-    </div>
     <button id="editToggle" class="edit-toggle" title="Toggle plate edit mode" aria-pressed="false">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14.5 2.5l3 3L6 17H3v-3L14.5 2.5z"/>
@@ -484,7 +367,7 @@
                 <label class="toggle-label"><input type="checkbox" id="chkRealmTowns"><span class="toggle-track"><span class="toggle-thumb"></span></span>Cities</label>
                 <label class="toggle-label"><input type="checkbox" id="chkRealmNames"><span class="toggle-track"><span class="toggle-thumb"></span></span>Names</label>
                 <label class="toggle-label"><input type="checkbox" id="chkRealmRoutes"><span class="toggle-track"><span class="toggle-thumb"></span></span>Roads and routes</label>
-                <div class="climate-hint">Pick each kingdom’s colour, and open it (▸) to choose where its people like to live: climate, temperature, humidity, where on the land (north, south, east, west), an island, sea, height, mountains, river, and which kingdoms it borders. The kingdoms are placed again on each change. To rename, type over a name, or double-click it on the map. Ctrl + right click on the land adds a city; Ctrl + left click two cities adds a route; right click a route or a city to take routes away</div>
+                <div class="climate-hint">Pick each kingdom’s colour, and open it (▸) to choose where its people like to live: climate, temperature, humidity, where on the land (north, south, east, west), an island, sea, height, mountains, river, and which kingdoms it borders. The kingdoms are placed again on each change. To rename, type over a name, or double-click it on the map. Ctrl + right click on the land adds a city; Ctrl + left click two cities adds a route; right click a route to take it away, or a city to remove it or its routes</div>
                 <div class="realm-files">
                     <button id="realmPng" class="realm-btn" type="button" title="The kingdoms, cities, routes and notable places in flat colours, as a picture (equirectangular, 4096 × 2048, centred as the map is)">Download the political map</button>
                     <div class="realm-files-head">Saved maps</div>

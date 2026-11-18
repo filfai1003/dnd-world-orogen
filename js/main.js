@@ -4,7 +4,7 @@
 // the climate, the rivers carved by its runoff, lakes, the ice age, dunes and loess, the rocks, deposits and food, the
 // Satellite view) — on Evolution's planet view and layer bar (v2/js/view/planet-view.js, layer-bar.js) and its export.
 // What is Generate's own: the sliders, the planet code, the plate edits (Ctrl-click, or the edit button on a phone, then
-// Rebuild), the Plates view and the Inspect list's layers (js/generate-plates.js), the build overlay, the tutorial.
+// Rebuild), the Plates view and the Inspect list's layers (js/generate-plates.js), the build overlay.
 
 import { history as undoHistory } from './dnd/undo.js';
 import Delaunator from 'delaunator';
@@ -26,7 +26,7 @@ import { showBuildError, describeFailure, holdControls } from './build-error.js'
 import { presentCrustLine } from './present-crust.js';
 import { plateColors, platesLegendHTML, INSPECT, inspectColors, drawPlateLines, platesMap } from './generate-plates.js';
 import { state } from './state.js';
-import { store, sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay, tutorial } from './page-chrome.js';
+import { store, sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay } from './page-chrome.js';
 import { Realm } from './realm/realm.js';
 import { Composer, ownLayers } from './dnd/composer.js';
 import { sliderBoxes, dockLayout, trimView, progressBar } from './dnd/panels.js';
@@ -52,7 +52,7 @@ const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location
     onChange: viewChanged, alive: (fin) => fin === world?.fin,
     extraLines: (ctx, W, view) => { drawPlateLines(ctx, W, view, world, { pending, hovered: hoveredPiece }); composer?.draw(ctx, W, view); realm?.draw(ctx, W, view); },
     extraLinesKey: (view) => `${world?.version ?? 0}|${view.layer === 'plates'}|${[...pending].join(',')}|${hoveredPiece}|${realm?.key(view) ?? ''}|${composer?.key() ?? ''}`,
-    infoText: (mode) => (IS_TOUCH ? 'Drag to turn · Pinch to zoom' : `${mode === 'map' ? 'Drag to move the map · Right-drag to turn it' : 'Drag to turn the globe'} · Click two cities for the journey · Scroll to zoom · Double-click a name to rename it · Ctrl + right click to add a city`) });
+    infoText: (mode) => (IS_TOUCH ? 'Drag to turn · Pinch to zoom' : `${mode === 'map' ? 'Drag to move the map · Right-drag to turn it' : 'Drag to turn the globe'} · Click two cities for the journey · Scroll to zoom · Double-click a name to rename it · Ctrl + right click to add a city, right click to remove one`) });
 const view = pv.view;
 // (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });
@@ -263,7 +263,7 @@ function readout(e) {
         const crust = presentCrustLine(pr, r);
         if (crust) head.push(`<span class="hi-label">Crust</span> ${crust}`);
     }
-    head.unshift(...realm.hoverLines(p, e), ...(composer?.hoverLines(e) ?? []));
+    head.unshift(...realm.hoverLines(p, e));
     pv.hover(pv.readoutLines({ p, fin: pv.shows(w.fin), heightKm: w.heightKm[r], head, story: w.story, rec: w.regionCell[r] }));
 }
 function setHovered(piece) { if (piece !== hoveredPiece) { hoveredPiece = piece; dirty = true; } }
@@ -572,39 +572,6 @@ const panel = sidePanel();
     });
 })();
 
-// ── the tutorial, What's New and the survey (as before) ──
-tutorial({ key: 'atlas-engine-tutorial-seen', firstDone: genBtn, isTouch: IS_TOUCH,
-    touchStep2: '<strong>Drag</strong> to rotate the globe. <strong>Pinch</strong> to zoom in and out. Tap the <strong>edit button</strong> (pencil icon) then <strong>tap</strong> plates to mark them for reshaping &mdash; select multiple, then hit <strong>Rebuild</strong> to apply all at once. Tap again to undo a pending selection.' });
-(function whatsNew() {
-    const VERSION = '7', LS_KEY = 'wo-whatsnew-seen', overlay = $('whatsNewOverlay'), card = $('whatsNewCard');
-    if (!overlay || !card) return;
-    const steps = card.querySelectorAll('.whatsnew-step'), dots = card.querySelectorAll('.dot');
-    let current = 0;
-    const show = (i) => { current = i; steps.forEach((s, k) => s.classList.toggle('active', k === i)); dots.forEach((d, k) => d.classList.toggle('active', k === i)); $('whatsNewBack').disabled = i === 0; $('whatsNewNext').textContent = i === steps.length - 1 ? 'Got It' : 'Next'; card.scrollTop = 0; };
-    const close = () => { overlay.classList.add('hidden'); store.set(LS_KEY, VERSION); };
-    $('whatsNewNext').addEventListener('click', () => (current < steps.length - 1 ? show(current + 1) : close()));
-    $('whatsNewBack').addEventListener('click', () => { if (current > 0) show(current - 1); });
-    $('whatsNewClose').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-    addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.classList.contains('hidden')) close(); });
-    overlay.classList.add('hidden');
-    if (store.get('atlas-engine-tutorial-seen') && store.get(LS_KEY) !== VERSION) genBtn.addEventListener('generate-done', () => { show(0); setTimeout(() => overlay.classList.remove('hidden'), 600); }, { once: true });
-})();
-(function survey() {
-    const LS = 'wo-usage', LS_DISMISSED = 'wo-survey-dismissed';
-    if (store.get(LS_DISMISSED)) return;
-    const hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h.toString(36); };
-    let data; try { data = JSON.parse(store.get(LS)) || {}; } catch { data = {}; }
-    const now = new Date(), hourKey = hash(`${now.getFullYear()}-${now.getMonth()}-${now.getDate()}T${now.getHours()}`), dayKey = hash(`${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`);
-    const hours = (data.h || 0) + (hourKey !== data.lh ? 1 : 0), days = (data.d || 0) + (dayKey !== data.ld ? 1 : 0);
-    store.set(LS, JSON.stringify({ h: hours, d: days, lh: hourKey, ld: dayKey }));
-    const overlay = $('surveyOverlay');
-    if (hours < 3 || days < 2 || !overlay) return;
-    const dismiss = () => { overlay.classList.add('hidden'); store.set(LS_DISMISSED, '1'); };
-    genBtn.addEventListener('generate-done', () => setTimeout(() => overlay.classList.remove('hidden'), 1000), { once: true });
-    for (const id of ['surveyClose', 'surveyDismiss', 'surveyLink']) $(id)?.addEventListener('click', dismiss);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
-})();
 // (the info line nudged once, after the first planet)
 genBtn.addEventListener('generate-done', () => { const el = $('info'); el.classList.add('nudge'); el.addEventListener('animationend', () => el.classList.remove('nudge'), { once: true }); }, { once: true });
 

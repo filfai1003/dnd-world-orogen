@@ -531,8 +531,8 @@ export class Realm {
         this.runs = this.routeRuns();
         // (as on screen: roads black, ways by water blue; main ones solid, the rest dashed; no halo, no arrows)
         for (const run of this.runs) {
-            const main = run.kind === 'major', col = run.mode === 0 ? 'rgba(20,18,16,0.9)' : 'rgba(25,75,175,0.9)';
-            ctx.lineWidth = (main ? 1.8 : 1.3) * s; ctx.strokeStyle = col; ctx.setLineDash(main ? [] : run.mode === 0 ? [5 * s, 3.5 * s] : [7 * s, 4 * s]);
+            const main = run.kind === 'major', col = run.mode === 2 ? 'rgba(25,75,175,0.9)' : 'rgba(20,18,16,0.9)';
+            ctx.lineWidth = (main ? 1.8 : 1.3) * s; ctx.strokeStyle = col; ctx.setLineDash(main ? [] : run.mode === 2 ? [7 * s, 4 * s] : [5 * s, 3.5 * s]);
             ctx.beginPath(); strokeWrapped(ctx, run.pts, W, H); ctx.stroke();
         }
         ctx.setLineDash([]);
@@ -594,8 +594,8 @@ export class Realm {
         // (the routes, minimal: roads black — main ones solid, the rest dashed — and the ways by water blue, the same)
         if (sh.routes) {
             for (const r of this.routeRuns()) {
-                const main = r.kind === 'major', col = r.mode === 0 ? 'rgba(20,18,16,0.9)' : 'rgba(25,75,175,0.9)';
-                ctx.lineWidth = main ? 1.8 : 1.3; ctx.strokeStyle = col; ctx.setLineDash(main ? [] : r.mode === 0 ? [5, 3.5] : [7, 4]);
+                const main = r.kind === 'major', col = r.mode === 2 ? 'rgba(25,75,175,0.9)' : 'rgba(20,18,16,0.9)';
+                ctx.lineWidth = main ? 1.8 : 1.3; ctx.strokeStyle = col; ctx.setLineDash(main ? [] : r.mode === 2 ? [7, 4] : [5, 3.5]);
                 ctx.beginPath(); line(r.pts); ctx.stroke();
             }
             ctx.setLineDash([]);

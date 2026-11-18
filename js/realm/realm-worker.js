@@ -203,14 +203,12 @@ function stepCost(a, b, d, ex, ny, mode, port) {
     if (la && lb) {
         let cost = d * 0.5 * (g.walk[a] + g.walk[b]) * (1 + 25 * Math.abs(g.heightM[b] - g.heightM[a]) / (d * 1000));
         g.stepMode = 0;
-        // (a kingdom's reach: slowed by the natural frontiers, and held back by a great river — borders settle on them)
+        // (a kingdom's reach: slowed by the natural frontiers — borders settle on them; rivers cost nothing to cross)
         if (mode === 'reach') {
             cost *= 0.5 * (barrierFor(a) + barrierFor(b));
-            if (g.riverQ[b] >= 1500 && g.riverQ[a] < 1500) cost += 3;
         }
         if (mode === 'travel') {
             if (g.riverQ[a] >= NAV_Q && g.riverQ[b] >= NAV_Q) { const boat = d / RIVER_KM_DAY; if (boat < cost) { cost = boat; g.stepMode = 1; } }
-            else if (g.riverQ[b] >= CROSS_Q && g.riverQ[a] < CROSS_Q) cost += 0.25 * (1 + Math.log10(g.riverQ[b] / CROSS_Q));
         }
         return cost;
     }

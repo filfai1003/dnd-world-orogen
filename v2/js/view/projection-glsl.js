@@ -5,7 +5,7 @@
 
 import { P } from './projections.js';
 
-const IDS = ['equirect', 'mercator', 'robinson', 'equalearth', 'mollweide', 'hammer', 'winkel', 'ortho', 'azeq', 'vdg'];
+const IDS = ['equirect', 'mercator', 'robinson', 'equalearth', 'mollweide', 'hammer', 'winkel', 'ortho', 'azeq', 'vdg', 'focus'];
 export const PROJECTION_INDEX = Object.fromEntries(IDS.map((id, i) => [id, i]));
 
 /** The uniforms for a projection and its options (degrees in, radians out): { uProj, uBounds, uOpt }. */
@@ -15,7 +15,7 @@ export function projectionUniforms(id = 'equirect', opts = {}) {
         uProj: PROJECTION_INDEX[id] ?? 0,
         uBounds: [b[0], b[1], b[2], b[3]],
         // (Mercator's max latitude; Winkel's cos(standard parallel); the azimuthals' centre latitude; flags)
-        uOpt: [(opts.maxLat ?? 85) * D, Math.cos((opts.par ?? 50.46) * D), (opts.lat0 ?? (id === 'azeq' ? 90 : 20)) * D,
+        uOpt: [(opts.maxLat ?? 85) * D, Math.cos((opts.par ?? 50.46) * D), (opts.lat0 ?? (id === 'azeq' ? 90 : id === 'focus' ? 0 : 20)) * D,
             ((opts.hemis ?? 2) === 2 ? 2 : 1) + ((opts.extent ?? 'world') === 'world' ? 10 : 0) + 0],
     };
 }
@@ -115,6 +115,11 @@ bool projInverse(vec2 xy, out vec2 ll) {
         float l = abs(X) < 1e-6 ? 0.0 : PI * (X2 + Y2 - 1.0 + sqrt(1.0 + 2.0 * (X2 - Y2) + (X2 + Y2) * (X2 + Y2))) / (2.0 * X);
         if (abs(l) > PI) return false;
         ll = vec2(l, clamp(p, -HALF, HALF)); return true;
+    }
+    if (uProj == 10) {
+        // (D&D fork: centred on a point — the azimuthal equidistant, the whole sphere within π of the centre)
+        float r = length(xy); if (r > PI) return false;
+        ll = azInverse(xy, r, r, uOpt.z); return true;
     }
     return false;
 }

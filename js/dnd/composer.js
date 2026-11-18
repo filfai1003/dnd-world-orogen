@@ -166,6 +166,7 @@ export class Composer {
         realm.onLegend = () => this.legend();
         this.mountBar();
         this.wireRotate();
+        this.wireFocus();
         this.applyBase();
     }
 
@@ -439,6 +440,20 @@ export class Composer {
         el.innerHTML = parts.join('');
         el.hidden = !parts.length;
         if (parts.length) $('legendCard').hidden = false;
+    }
+
+    // ── Alt + click: the map centred on that place, true round it (the 'Centred on a point' projection) ──
+    wireFocus() {
+        document.addEventListener('click', (e) => {
+            if (!e.altKey || (e.target !== this.pv.ui.map && e.target !== this.pv.ui.canvas)) return;
+            const p = this.pv.placeUnder(e); if (!p) return;
+            e.preventDefault(); e.stopImmediatePropagation();
+            const lon = Math.round(p[0] * 360 - 180), lat = Math.round(90 - p[1] * 180);
+            const mode = $('viewMode'); if (mode && mode.value !== 'map') { mode.value = 'map'; mode.dispatchEvent(new Event('change', { bubbles: true })); }
+            const sel = $('mapProjection'); if (sel && sel.value !== 'focus') { sel.value = 'focus'; sel.dispatchEvent(new Event('change')); }
+            const latIn = document.querySelector('#mapProjOpts [data-opt="lat0"]'); if (latIn) { latIn.value = String(lat); latIn.dispatchEvent(new Event('input')); }
+            const slider = $('sMapCenterLon'); slider.value = String(lon); slider.dispatchEvent(new Event('input')); if ($('dndCenterNum')) $('dndCenterNum').value = String(lon);
+        }, { capture: true });
     }
 
     // ── turning the map: drag it east or west (when not zoomed in), or type the degrees ──

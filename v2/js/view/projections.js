@@ -105,6 +105,17 @@ export const P = {
             const r = Math.hypot(x, y); if (r > 1) return null;
             const [l, p] = azimuthalInverse(x, y, r, Math.asin(r), p0); return [wrap(l + h * PI), p];
         } },
+    // (D&D fork: a map true round one place, anywhere — the azimuthal equidistant centred on its latitude (the centre
+    // longitude as every projection's), shown as a 2 : 1 window of a chosen radius round it: distances and bearings from
+    // the centre true, the shapes near it all but true)
+    focus: { label: 'Centred on a point', note: 'true round a place anywhere: distances and bearings from it exact (Alt + click a place to centre on it)',
+        bounds: (o) => { const r = (o.radius ?? 30) * D; return [-2 * r, 2 * r, -r, r]; },
+        fwd: (l, p, o) => {
+            const p0 = (o.lat0 ?? 0) * D, c = Math.acos(clamp(Math.sin(p0) * Math.sin(p) + Math.cos(p0) * Math.cos(p) * Math.cos(l), -1, 1));
+            const k = c < 1e-9 ? 1 : c / Math.sin(c);
+            return [k * Math.cos(p) * Math.sin(l), k * (Math.cos(p0) * Math.sin(p) - Math.sin(p0) * Math.cos(p) * Math.cos(l))];
+        },
+        inv: (x, y, o) => { const r = Math.hypot(x, y); if (r > PI) return null; return azimuthalInverse(x, y, r, r, (o.lat0 ?? 0) * D); } },
     vdg: { label: 'Van der Grinten', note: 'the whole world in a circle, the old atlas look',
         bounds: () => [-PI, PI, -PI, PI],
         fwd: (l, p) => {
@@ -144,12 +155,14 @@ export const P = {
 };
 
 /** The projections offered, in order. */
-export const PROJECTIONS = ['equirect', 'mercator', 'robinson', 'equalearth', 'mollweide', 'hammer', 'winkel', 'ortho', 'azeq', 'vdg'].map(id => ({ id, label: P[id].label, note: P[id].note }));
+export const PROJECTIONS = ['equirect', 'mercator', 'robinson', 'equalearth', 'mollweide', 'hammer', 'winkel', 'ortho', 'azeq', 'vdg', 'focus'].map(id => ({ id, label: P[id].label, note: P[id].note }));
 /** Each projection's own options (the centre longitude is shared by all): select or range. */
 export const PROJECTION_OPTIONS = {
     mercator: [{ id: 'maxLat', label: 'Max latitude', type: 'select', values: [[85, '85°'], [80, '80°'], [75, '75°'], [70, '70°']], def: 85 }],
     winkel: [{ id: 'par', label: 'Standard parallel', type: 'select', values: [[50.46, '50.5° (Winkel’s)'], [40, '40°'], [60, '60°']], def: 50.46 }],
     ortho: [{ id: 'lat0', label: 'Centre latitude', type: 'range', min: -90, max: 90, def: 20 }, { id: 'hemis', label: 'Hemispheres', type: 'select', values: [[2, 'two, opposite'], [1, 'one']], def: 2 }],
+    focus: [{ id: 'lat0', label: 'Centre latitude', type: 'range', min: -90, max: 90, step: 1, def: 0 },
+        { id: 'radius', label: 'Shown round it', type: 'select', values: [[5, '~550 km'], [10, '~1,100 km'], [20, '~2,200 km'], [30, '~3,300 km'], [45, '~5,000 km'], [60, '~6,700 km'], [90, '~10,000 km']], def: 30 }],
     azeq: [{ id: 'lat0', label: 'Centre latitude', type: 'range', min: -90, max: 90, def: 90 }, { id: 'extent', label: 'Extent', type: 'select', values: [['world', 'the whole world'], ['hemi', 'a hemisphere']], def: 'world' }],
 };
 

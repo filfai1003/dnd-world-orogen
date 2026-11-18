@@ -1360,14 +1360,14 @@ function grow(K, prefs = []) {
         // its land can't be helped, and doesn't count)
         const mul = new Float64Array(K).fill(1), shared = caps.map((c, k) => caps.some((d, j) => j !== k && g.comp[d] === g.comp[c]));
         let bestOwner = owner, bestWorst = Infinity;
-        for (let it = 0; it < 14; it++) {
+        for (let it = 0; it < 20; it++) {
             const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && g.land[c]) A[owner[c]] += g.area[c];
             const At = A.reduce((t, v) => t + v, 0) / K;
             let worst = 0;
             for (let k = 0; k < K; k++) { const f = SIZE[prefs[k]?.size]; if (!f || !A[k]) continue; const r = A[k] / (f * At); if (shared[k]) worst = Math.max(worst, Math.abs(Math.log(r))); mul[k] = Math.max(0.25, Math.min(4, mul[k] * Math.max(0.8, Math.min(1.25, r ** 0.35)))); }
             if (worst < bestWorst) { bestWorst = worst; bestOwner = owner; }
-            if (worst < Math.log(1.15)) break;
-            say(1, 0.6 + 0.4 * it / 14);
+            if (worst < Math.log(1.1)) break;
+            say(1, 0.6 + 0.4 * it / 20);
             g.kMul = mul;
             owner = partition(caps, bias);
             g.kMul = null;

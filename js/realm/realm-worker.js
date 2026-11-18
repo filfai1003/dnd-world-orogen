@@ -725,6 +725,31 @@ function trimToSize(owner, K, prefs) {
         for (let c = 0; c < g.n; c++) if (drop[c] && lab[c] >= 0) owner[c] = lab[c];
     }
 }
+/** A kingdom of an island (its people's wish): the whole of its island its own, and nothing beyond it — what it held
+ *  elsewhere goes to the kingdoms round it. */
+function keepIslands(owner, K, prefs, caps) {
+    const g = G, { GW, GH } = g;
+    for (let k = 0; k < K; k++) {
+        if (prefs[k]?.island !== 'island' || caps[k] < 0) continue;
+        const home = g.comp[caps[k]];
+        if (!(g.compArea[home] < 0.25 * g.compMax)) continue;        // (not on an island after all: left as it is)
+        let lost = false;
+        for (let c = 0; c < g.n; c++) {
+            if (!g.land[c]) continue;
+            if (g.comp[c] === home) owner[c] = k;
+            else if (owner[c] === k) { owner[c] = -1; lost = true; }
+        }
+        if (!lost) continue;
+        // (the land it gave up: to the nearest other kingdom, over land and sea)
+        const lab = new Int16Array(g.n).fill(-1), q = new Int32Array(g.n); let qh = 0, qt = 0;
+        for (let c = 0; c < g.n; c++) if (owner[c] >= 0 && owner[c] !== k) { lab[c] = owner[c]; q[qt++] = c; }
+        while (qh < qt) {
+            const c = q[qh++], y = (c / GW) | 0, x = c - y * GW;
+            for (const [dx, dy] of DIRS) { const yy = y + dy; if (yy < 0 || yy >= GH) continue; const d = yy * GW + ((x + dx + GW) % GW); if (lab[d] < 0 && !(g.land[d] && g.comp[d] === home)) { lab[d] = lab[c]; q[qt++] = d; } }
+        }
+        for (let c = 0; c < g.n; c++) if (g.land[c] && owner[c] < 0) owner[c] = lab[c];
+    }
+}
 /** Two kingdoms meant to share a frontier and still apart, with no more than ~300 km of another's land between them: the
  *  shortest way across (over land) given half to each, a few cells wide — they meet on it. */
 function joinBorders(owner, K, prefs) {
@@ -1185,6 +1210,7 @@ function grow(K, prefs = []) {
         // (two that must not touch but do: both draw back, the kingdoms round them fill the gap)
         for (let k = 0; k < K; k++) for (const b of relOf(prefs, k, 'apart')) if (b < K && b > k && FR[k * K + b]) { bias[k] = Math.min(20, bias[k] + 3); bias[b] = Math.min(20, bias[b] + 3); }
     }
+    keepIslands(owner, K, prefs, caps);
     trimToSize(owner, K, prefs);
     joinBorders(owner, K, prefs);
     { const A = new Float64Array(K); for (let c = 0; c < g.n; c++) if (owner[c] >= 0) A[owner[c]] += g.area[c]; g.lastArea = A; }
@@ -1306,7 +1332,11 @@ function pickSeats(cities, pop, K) {
         const cap = cities.find(t => t.capital && t.kingdom === k); if (!cap) continue;
         let own = cities.map((t, i) => [t, i]).filter(([t]) => t.kingdom === k && !t.capital);
         if (G.keepPorts[k]) { const dry = own.filter(([t]) => !t.port); if (dry.length >= n) own = dry; }
-        own.sort((a, b) => pop[b[1]] / (1 + angKm(b[0].c, cap.c) / 400) - pop[a[1]] / (1 + angKm(a[0].c, cap.c) / 400));
+        // (its other capitals near the first — allied seats a few days apart: the biggest towns within ~600 km, else the
+        // nearest)
+        const near = own.filter(([t]) => angKm(t.c, cap.c) <= 600);
+        if (near.length >= n) own = near.sort((a, b) => pop[b[1]] - pop[a[1]]);
+        else own.sort((a, b) => angKm(a[0].c, cap.c) - angKm(b[0].c, cap.c));
         for (let j = 0; j < n && j < own.length; j++) own[j][0].seat = true;
     }
 }

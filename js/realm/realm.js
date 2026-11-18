@@ -276,7 +276,7 @@ export class Realm {
             this.worker.postMessage({ cmd: 'init', grid: { ...grid, codes: KOPPEN_CODES } });
             const kept = this.load();
             if (this.preset) { this.applyPreset(this.preset); this.auto(); }
-            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, cities: kept.cities }); }
+            else if (kept?.cities?.length) { this.names = kept.names ?? this.names; this.fitNames(kept.names?.kingdoms?.length || 1); this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, cities: kept.cities.map((c, i) => ({ ...c, seat: !!this.names.seats?.[i] })) }); }
             else this.auto();
         }, 30);
     }
@@ -287,13 +287,14 @@ export class Realm {
         this.names.cities = [];
         this.fitNames(K);
         this.request({ cmd: 'auto', K, N: +$('sRealmN').value, prefs: this.names.prefs, mins: this.names.kingdoms.map((_, k) => Math.max(0, (this.names.towns?.[k]?.length || 0) - 1, (this.names.ncap?.[k] || 1) - 1)),
-            ports: this.names.kingdoms.map((_, k) => (this.names.towns?.[k] || []).filter(t => t && typeof t === 'object' && t.port).length) });
+            ports: this.names.kingdoms.map((_, k) => (this.names.towns?.[k] || []).filter(t => t && typeof t === 'object' && t.port).length),
+            ncap: this.names.ncap, keepPorts: this.names.kingdoms.map((_, k) => (this.names.towns?.[k] || []).some(t => t && typeof t === 'object' && t.port)) });
         this.named = false;                            // (the towns' names, if any, given to the new cities)
     }
     /** The realm again from the cities as they stand (moved, added, removed, a capital changed). */
     fixed() {
         if (!this.data) return;
-        this.request({ cmd: 'fixed', prefs: this.names.prefs, cities: this.data.cities.map(c => ({ u: c.u, v: c.v, capital: c.capital })) });
+        this.request({ cmd: 'fixed', prefs: this.names.prefs, seats: true, cities: this.data.cities.map((c, i) => ({ u: c.u, v: c.v, capital: c.capital, seat: !!this.names.seats?.[i] })) });
     }
     request(msg) {
         this.busy = true; msg.id = ++this.reqId;
@@ -302,14 +303,16 @@ export class Realm {
     }
     received(m) {
         if (m.type === 'ready') return;
+        if (m.type === 'progress') { if (m.id === this.reqId) window.dndProgress?.('realm', m.step, m.steps, m.label, m.frac); return; }
         if (m.type === 'trip') { const t = this.trip; if (t && m.id === this.tripId && t.a === m.a && t.b === m.b) { t.options = m.options; t.loading = false; this.tripCard(); this.changed(false); } return; }
         if (m.id !== this.reqId) return;
         this.busy = false;
+        window.dndProgress?.('realm', null);
         if (m.type === 'error') { console.error(m.message); this.status(`Error: ${m.message.split('\n')[0]}`); return; }
         this.data = m; this.ready = true; this.trip = null; this.tripCard();
         // (names: a kingdom by its index, a city by its place in the list — kept as they were where they still exist)
         this.fitNames(m.K);
-        if (this.named === false) this.seatsFromCounts(m);
+        if (this.named === false) this.names.seats = m.cities.some(c => c.seat) ? m.cities.map(c => !!c.seat) : (this.seatsFromCounts(m), this.names.seats);
         if (this.named === false && this.names.towns?.length) {
             // (the towns' names: the capital's first, then the other capitals', then by size — save for a town described,
             // { name, port, small }, given the town that fits it best, the nearest the capital)

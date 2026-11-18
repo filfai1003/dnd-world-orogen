@@ -25,8 +25,9 @@ self.onmessage = ({ data: msg }) => {
         if (msg.cmd === 'init') { G = prepare(msg.grid); self.postMessage({ type: 'ready' }); return; }
         if (!G) throw new Error('no world');
         const t0 = performance.now();
+        G.reqId = msg.id; G.ncap = msg.ncap || []; G.keepPorts = msg.keepPorts || []; G.seatsIn = msg.seats || null;
         if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, a: msg.a, b: msg.b, options: tripOptions(msg.from, msg.to, msg.ports || []) }); return; }
-        if (msg.cmd === 'fixed') { G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
+        if (msg.cmd === 'fixed') { say(1); G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
         const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities);
         res.ms = Math.round(performance.now() - t0);
         self.postMessage({ type: 'realm', id: msg.id, ...res }, [res.owner.buffer]);
@@ -36,6 +37,15 @@ self.onmessage = ({ data: msg }) => {
 };
 
 // ── the grid, prepared: positions, cell sizes, costs per km, coasts, the open sea's distance from land ──
+/** The realm's steps, said to the page as they go (D&D fork): `step` of `steps`, its label, and how far (0…1). */
+const STEPS = ['Placing the capitals', 'Growing the kingdoms', 'Placing the cities', 'Counting the people and the food', 'Growing the main roads (slime network)', 'Growing the other roads (slime network)', 'Tracing the routes'];
+let lastSaid = 0;
+function say(step, frac = 0) {
+    const now = performance.now();
+    if (frac > 0 && frac < 1 && now - lastSaid < 120) return;
+    lastSaid = now;
+    self.postMessage({ type: 'progress', id: G?.reqId, step: step + 1, steps: STEPS.length, label: STEPS[step], frac });
+}
 function prepare(g) {
     const { GW, GH } = g, n = GW * GH, codes = g.codes;
     const xyz = new Float32Array(3 * n), dxKm = new Float32Array(GH), area = new Float32Array(n), dyKm = Math.PI * R_KM / GH;
@@ -208,6 +218,7 @@ function stepCost(a, b, d, ex, ny, mode, port) {
     const g = G, la = g.land[a], lb = g.land[b];
     if (la && lb) {
         let cost = d * 0.5 * (g.walk[a] + g.walk[b]) * (1 + 25 * Math.abs(g.heightM[b] - g.heightM[a]) / (d * 1000));
+        if (mode === 'travel' && g.roadF) cost *= 0.5 * (g.roadF[a] + g.roadF[b]);
         g.stepMode = 0;
         // (a kingdom's reach: slowed by the natural frontiers — borders settle on them; rivers cost nothing to cross)
         if (mode === 'reach') {
@@ -617,11 +628,14 @@ function seedCapitals(K, prefs = []) {
 function grow(K, prefs = []) {
     const g = G;
     g.adapt = adaptOf(prefs); g.prefs = prefs;
+    say(0);
     let caps = seedCapitals(K, prefs);
+    say(1);
     K = caps.length;
     const bias = new Array(K).fill(0);
     let owner = null;
     for (let it = 0; it < 7; it++) {
+        say(1, it / 7);
         owner = partition(caps, bias);
         const F = new Float64Array(K), A = new Float64Array(K), cx = new Float64Array(3 * K);
         for (let c = 0; c < g.n; c++) {
@@ -749,9 +763,128 @@ function describe(cities, owner, K) {
 // ── the routes: each city to its neighbours by travel, the redundant links dropped, then each route traced ──
 const NEAR = 8, ROUTE_DAYS = 90;
 
-function routes(cities) {
+/** Each kingdom's other capitals (D&D fork): its biggest towns near the first, as many as it has capitals — kept as the
+ *  page sent them for a realm placed by hand. */
+function pickSeats(cities, pop, K) {
+    if (G.seatsIn) return;
+    for (let k = 0; k < K; k++) {
+        const n = (G.ncap[k] || 1) - 1; if (n <= 0) continue;
+        const cap = cities.find(t => t.capital && t.kingdom === k); if (!cap) continue;
+        let own = cities.map((t, i) => [t, i]).filter(([t]) => t.kingdom === k && !t.capital);
+        if (G.keepPorts[k]) { const dry = own.filter(([t]) => !t.port); if (dry.length >= n) own = dry; }
+        own.sort((a, b) => pop[b[1]] / (1 + angKm(b[0].c, cap.c) / 400) - pop[a[1]] / (1 + angKm(a[0].c, cap.c) / 400));
+        for (let j = 0; j < n && j < own.length; j++) own[j][0].seat = true;
+    }
+}
+
+/**
+ * The roads grown as a slime mould grows its network (D&D fork; Physarum polycephalum, as Tero et al., Science 2010,
+ * modelled it): the land a grid of tubes, each as long as its ground takes to cross; the cities the food. Step by step one
+ * city drives a flow to the others (Kirchhoff's law: a Laplacian solved by conjugate gradients), the tubes that carry much
+ * of it thicken, the rest wither (dD/dt = |Q|^μ / (1 + |Q|^μ) − D). What stays thick is the network: trunks, junctions,
+ * a few loops. On a grid four times coarser than the realm's; per landmass. Returns each realm cell's road strength 0…1.
+ */
+const SLIME_F = 4, SLIME_ITERS = 160, SLIME_MU = 1.6, SLIME_DT = 0.6, OPP = [1, 0, 3, 2, 7, 6, 5, 4];   // (OPP: each of DIRS's opposite)
+function slimeRoads(food, weight, stepIndex) {
+    const g = G, { GW, GH } = g, F = SLIME_F, W = GW / F, H = GH / F, N = W * H;
+    // (the coarse cells: land where most of the fine cells are; each one's days a km — the walk, without the boat)
+    if (!g.slime) {
+        const land = new Uint8Array(N), wk = new Float32Array(N), xyz = new Float32Array(3 * N);
+        for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) {
+            let nl = 0, sw = 0;
+            for (let y = Y * F; y < Y * F + F; y++) for (let x = X * F; x < X * F + F; x++) { const c = y * GW + x; if (g.land[c] && !g.ice[c]) { nl++; sw += g.walk[c]; } }
+            const C = Y * W + X; land[C] = nl * 2 >= F * F ? 1 : 0; wk[C] = nl ? sw / nl : 0;
+            const c0 = (Y * F + (F >> 1)) * GW + X * F + (F >> 1); xyz[3 * C] = g.xyz[3 * c0]; xyz[3 * C + 1] = g.xyz[3 * c0 + 1]; xyz[3 * C + 2] = g.xyz[3 * c0 + 2];
+        }
+        // (the tubes: each land cell to its 8 neighbours, as long as the days between them)
+        const nb = new Int32Array(8 * N).fill(-1), len = new Float32Array(8 * N);
+        for (let C = 0; C < N; C++) {
+            if (!land[C]) continue;
+            const Y = (C / W) | 0, X = C - Y * W;
+            DIRS.forEach(([dx, dy], k) => {
+                const YY = Y + dy; if (YY < 0 || YY >= H) return;
+                const D = YY * W + ((X + dx + W) % W); if (!land[D]) return;
+                const d = R_KM * Math.acos(Math.max(-1, Math.min(1, xyz[3 * C] * xyz[3 * D] + xyz[3 * C + 1] * xyz[3 * D + 1] + xyz[3 * C + 2] * xyz[3 * D + 2])));
+                nb[8 * C + k] = D; len[8 * C + k] = Math.max(1e-3, d * 0.5 * (wk[C] + wk[D]));
+            });
+        }
+        // (the landmasses, each solved on its own)
+        const comp = new Int32Array(N).fill(-1), q = new Int32Array(N);
+        let nc = 0;
+        for (let s0 = 0; s0 < N; s0++) {
+            if (!land[s0] || comp[s0] >= 0) continue;
+            let qh = 0, qt = 0; q[qt++] = s0; comp[s0] = nc;
+            while (qh < qt) { const C = q[qh++]; for (let k = 0; k < 8; k++) { const D = nb[8 * C + k]; if (D >= 0 && comp[D] < 0) { comp[D] = nc; q[qt++] = D; } } }
+            nc++;
+        }
+        g.slime = { W, H, N, land, nb, len, comp };
+    }
+    const S = g.slime, { nb, len, comp } = S;
+    const coarse = (c) => (((c / GW) | 0) / F | 0) * W + (((c % GW) / F) | 0);
+    // (the food: each city's coarse cell, on land; by landmass)
+    const nodes = [], wts = [];
+    food.forEach((c, i) => { const C = coarse(c); if (S.land[C]) { nodes.push(C); wts.push(weight[i]); } });
+    const D = new Float32Array(8 * S.N).fill(1), p = new Float64Array(S.N), b = new Float64Array(S.N), r = new Float64Array(S.N), dir = new Float64Array(S.N), Ap = new Float64Array(S.N);
+    const byComp = new Map();
+    nodes.forEach((C, i) => { const k = comp[C]; if (!byComp.has(k)) byComp.set(k, []); byComp.get(k).push(i); });
+    const groups = [...byComp.values()].filter(gr => gr.length >= 2);
+    if (!groups.length) return null;
+    // (each landmass's cells, once)
+    const cellsOf = new Map();
+    for (const gr of groups) { const k = comp[nodes[gr[0]]], list = []; for (let C = 0; C < S.N; C++) if (comp[C] === k) list.push(C); cellsOf.set(k, list); }
+    let seed = 12345 + nodes.length * 7919; const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+    const mul = (cells, x, out) => { for (const C of cells) { let s2 = 0; for (let k = 0; k < 8; k++) { const E = nb[8 * C + k]; if (E < 0) continue; const w = (D[8 * C + k] + D[8 * E + OPP[k]]) * 0.5 / len[8 * C + k]; s2 += w * (x[C] - x[E]); } out[C] = s2; } };
+    for (let it = 0; it < SLIME_ITERS; it++) {
+        say(stepIndex, it / SLIME_ITERS);
+        // (one city, by its weight, drives the flow; the others of its landmass take it in, by theirs)
+        const gr = groups[Math.floor(rnd() * groups.length)];
+        let tot = 0; for (const i of gr) tot += wts[i];
+        let pick = rnd() * tot, src = gr[0]; for (const i of gr) { pick -= wts[i]; if (pick <= 0) { src = i; break; } }
+        const cells = cellsOf.get(comp[nodes[src]]), I0 = 1.5;
+        for (const C of cells) b[C] = 0;
+        const rest = tot - wts[src];
+        for (const i of gr) if (i !== src) b[nodes[i]] -= I0 * wts[i] / rest;
+        b[nodes[src]] += I0;
+        // (Kirchhoff: the pressures by conjugate gradients, from the last ones)
+        mul(cells, p, Ap);
+        let rr = 0; for (const C of cells) { r[C] = b[C] - Ap[C]; dir[C] = r[C]; rr += r[C] * r[C]; }
+        for (let k = 0; k < 60 && rr > 1e-10; k++) {
+            mul(cells, dir, Ap);
+            let pAp = 0; for (const C of cells) pAp += dir[C] * Ap[C];
+            if (!(pAp > 0)) break;
+            const a = rr / pAp; let rr2 = 0;
+            for (const C of cells) { p[C] += a * dir[C]; r[C] -= a * Ap[C]; rr2 += r[C] * r[C]; }
+            const bet = rr2 / rr; rr = rr2;
+            for (const C of cells) dir[C] = r[C] + bet * dir[C];
+        }
+        // (the tubes thicken with their flow, and wither without it)
+        for (const C of cells) for (let k = 0; k < 8; k++) {
+            const E = nb[8 * C + k]; if (E < 0) continue;
+            const Q = Math.abs((D[8 * C + k] + D[8 * E + OPP[k]]) * 0.5 / len[8 * C + k] * (p[C] - p[E])), fq = Q ** SLIME_MU / (1 + Q ** SLIME_MU);
+            D[8 * C + k] += SLIME_DT * (fq - D[8 * C + k]);
+        }
+    }
+    // (each fine cell's road strength: its coarse cell's thickest tube, against the network's thickest)
+    const best = new Float32Array(S.N); let top = 0;
+    for (let C = 0; C < S.N; C++) { let m = 0; for (let k = 0; k < 8; k++) if (nb[8 * C + k] >= 0) m = Math.max(m, D[8 * C + k]); best[C] = m; top = Math.max(top, m); }
+    const out = new Float32Array(g.n);
+    if (top > 0) for (let c = 0; c < g.n; c++) if (g.land[c]) { const v = best[coarse(c)] / top; out[c] = v > 0.12 ? Math.min(1, v) : 0; }
+    say(stepIndex, 1);
+    return out;
+}
+
+function routes(cities, pop = []) {
     const g = G, at = new Map(cities.map((t, i) => [t.c, i])), port = new Uint8Array(g.n);
     for (const t of cities) if (t.port) port[t.c] = 1;
+    // (D&D fork: the roads grown first — the capitals' network, then everyone's — and travel on them made easy: the main
+    // roads' ground counts for about a sixth, the others' for about half)
+    g.roadF = null;
+    const crowns = cities.map((t, i) => i).filter(i => cities[i].capital || cities[i].seat);
+    const main = slimeRoads(crowns.map(i => cities[i].c), crowns.map(() => 1), 4);
+    const all = slimeRoads(cities.map(t => t.c), cities.map((t, i) => (t.capital || t.seat ? 3 : 1) * Math.max(0.3, Math.sqrt((pop[i] || 1000) / 20000))), 5);
+    g.roadF = new Float32Array(g.n).fill(1);
+    for (let c = 0; c < g.n; c++) { const m = main?.[c] || 0, o = all?.[c] || 0; if (m || o) g.roadF[c] = 1 / (1 + 5 * m + 1.5 * o); }
+    say(6);
     // (1: each city's costs to its nearest neighbours by travel — directed: the winds and currents)
     const cost = new Map(), key = (a, b) => a * 65536 + b;
     for (let a = 0; a < cities.length; a++) {
@@ -785,6 +918,20 @@ function routes(cities) {
         let best = -1, bv = Infinity;
         for (let b = 0; b < cities.length; b++) if (b !== a && sym(a, b) < bv) { bv = sym(a, b); best = b; }
         if (best >= 0) { kept.push(a < best ? [a, best] : [best, a]); deg[a]++; deg[best]++; }
+    }
+    // (D&D fork: the capitals all joined by main roads — the cheapest tree over them, by travel on the roads)
+    if (crowns.length > 1) {
+        const inC = new Set(crowns), cc = new Map();
+        for (const a of crowns) {
+            let left = crowns.length - 1;
+            search([[cities[a].c, 0, a]], 'travel', Infinity, port, (c) => { const b = at.get(c); if (b !== undefined && b !== a && inC.has(b)) { cc.set(key(a, b), g.dist[c]); if (!C(a, b) || C(a, b) === Infinity) cost.set(key(a, b), g.dist[c]); return --left <= 0; } return false; });
+        }
+        const edges = [];
+        for (let i = 0; i < crowns.length; i++) for (let j = i + 1; j < crowns.length; j++) { const a = crowns[i], b = crowns[j], w = Math.min(cc.get(key(a, b)) ?? Infinity, cc.get(key(b, a)) ?? Infinity); if (w < Infinity) edges.push([w, a, b]); }
+        edges.sort((x, y) => x[0] - y[0]);
+        const rt = new Map(crowns.map(i => [i, i])), fr = (i) => { while (rt.get(i) !== i) i = rt.get(i); return i; };
+        const have = new Set(kept.map(([a, b]) => key(a, b)));
+        for (const [, a, b] of edges) { const ra = fr(a), rb = fr(b); if (ra === rb) continue; rt.set(ra, rb); const k2 = a < b ? key(a, b) : key(b, a); if (!have.has(k2)) { kept.push(a < b ? [a, b] : [b, a]); have.add(k2); } }
     }
     // (D&D fork: one network — no city, no group of cities, cut off: the groups joined, the nearest pair first, however
     // far — by sea when they must)
@@ -835,12 +982,14 @@ function holdsOf(owner, k) {
 
 // ── the whole realm ──
 function finishRealm(cities, owner, K, extra = {}) {
+    say(3);
     const { kingdoms, cityPop } = describe(cities, owner, K);
-    const R = routes(cities);
+    pickSeats(cities, cityPop, K);
+    const R = routes(cities, cityPop);
     const g = G;
     return {
         owner, K,
-        cities: cities.map((t, i) => ({ c: t.c, u: ((t.c % g.GW) + 0.5) / g.GW, v: (((t.c / g.GW) | 0) + 0.5) / g.GH, capital: !!t.capital, kingdom: t.kingdom, port: !!t.port, people: Math.round(cityPop[i]),
+        cities: cities.map((t, i) => ({ c: t.c, u: ((t.c % g.GW) + 0.5) / g.GW, v: (((t.c / g.GW) | 0) + 0.5) / g.GH, capital: !!t.capital, seat: !!t.seat, kingdom: t.kingdom, port: !!t.port, people: Math.round(cityPop[i]),
             river: g.riverQ[t.c] >= CROSS_Q, heightM: Math.round(g.heightM[t.c]), koppen: g.codes[g.koppen[t.c]] })),
         kingdoms: kingdoms.map((k, i) => ({ ...k, id: i, people: Math.round(k.people), food: Math.round(k.food), selfSufficiency: k.people > 0 ? k.food / k.people : 0, holds: holdsOf(owner, i) })),
         // (and on the water, the surface current under each step — the map's arrows: how far the ship must make up for it)
@@ -852,6 +1001,7 @@ function finishRealm(cities, owner, K, extra = {}) {
 
 function autoRealm(K, N, prefs = [], mins = [], ports = []) {
     const { caps, owner } = grow(Math.max(1, K), prefs);
+    say(2);
     const cities = placeCities(caps, owner, Math.max(caps.length, N), mins, prefs, ports);
     return finishRealm(cities, owner, caps.length, { unmet: G.unmet || [] });
 }
@@ -866,7 +1016,7 @@ function fixedRealm(list) {
     if (!pts.some(t => t.capital) && pts.length) pts[0].capital = true;
     const caps = pts.filter(t => t.capital).map(t => t.c);
     const owner = partition(caps, new Array(caps.length).fill(0));
-    const cities = pts.map(t => ({ c: t.c, capital: t.capital, kingdom: t.capital ? caps.indexOf(t.c) : owner[t.c] }));
+    const cities = pts.map((t, i) => ({ c: t.c, capital: t.capital, seat: !!list[i].seat, kingdom: t.capital ? caps.indexOf(t.c) : owner[t.c] }));
     // (a city outside every kingdom joins the nearest capital's)
     for (const t of cities) if (t.kingdom < 0) { let best = 0, bd = Infinity; caps.forEach((c, k) => { const d = angKm(c, t.c); if (d < bd) { bd = d; best = k; } }); t.kingdom = best; }
     return finishRealm(cities, owner, caps.length, { order: list.map((_, i) => i) });

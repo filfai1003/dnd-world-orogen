@@ -110,3 +110,16 @@ export function trimView(pv) {
     if ($('chkRotate')?.checked) $('chkRotate').click();
     if ($('chkSpace')?.checked) $('chkSpace').click();
 }
+
+/** The progress bar at the bottom (D&D fork): each job running — the world's finish, the kingdoms — its step of its
+ *  steps, the step's name and how far it is. `dndProgress(job, null)` takes it away. */
+export function progressBar() {
+    const el = document.createElement('div'); el.id = 'dndProgress'; el.className = 'dnd-progress'; el.hidden = true;
+    document.body.appendChild(el);
+    const jobs = new Map(), NAMES = { world: 'World', realm: 'Kingdoms' };
+    window.dndProgress = (job, step, steps, label, frac = 0) => {
+        if (step == null) jobs.delete(job); else jobs.set(job, { step, steps, label, frac });
+        el.hidden = !jobs.size;
+        el.innerHTML = [...jobs].map(([j, p]) => `<div class="dnd-progress-row"><span class="dnd-progress-what"><b>${NAMES[j] ?? j}</b> · step ${p.step} of ${p.steps} · ${p.label}</span><span class="dnd-progress-pct">${Math.round(100 * Math.max(0, Math.min(1, p.frac)))}%</span><div class="dnd-progress-bar"><i style="width:${(100 * Math.max(0, Math.min(1, p.frac))).toFixed(1)}%"></i></div></div>`).join('');
+    };
+}

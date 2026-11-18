@@ -21,7 +21,7 @@ import { state } from './state.js';
 import { sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay } from './page-chrome.js';
 import { Realm } from './realm/realm.js';
 import { Composer, ownLayers } from './dnd/composer.js';
-import { sliderBoxes, dockLayout, trimView } from './dnd/panels.js';
+import { sliderBoxes, dockLayout, trimView, progressBar } from './dnd/panels.js';
 
 setDelaunator(Delaunator);
 
@@ -45,6 +45,7 @@ const pv = new PlanetView({ isTouch: IS_TOUCH, gpu: new URLSearchParams(location
 const view = pv.view;
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => importKey });
 trimView(pv);
+progressBar();
 queueMicrotask(() => {
     composer = new Composer({ pv, realm, world: () => world, onChange: () => { dirty = true; } });
     // (an imported heightmap has no plates, so no geology)
@@ -119,6 +120,15 @@ async function finish(w) {
     }
 }
 function updateChip() {
+    // (D&D fork: the world's finish on the progress bar — its stage of the stages, how far into it)
+    {
+        const w = world, f = w?.finishing;
+        if (!f) window.dndProgress?.('world', null);
+        else {
+            const i = Math.max(0, FINISH_STAGES.findIndex(([k]) => k === f.stage)), before = FINISH_STAGES.slice(0, i).reduce((t, [, v]) => t + v, 0), part = FINISH_STAGES[i]?.[1] || 1;
+            window.dndProgress?.('world', i + 1, FINISH_STAGES.length, `the world: ${f.stage}`, (f.share - before) / part);
+        }
+    }
     const chip = $('climateChip'), w = world, needs = CLIMATE_LAYERS.has(view.layer) || FARMING_LAYERS.has(view.layer);
     let text = null, act = null;
     if (w?.finishing && needs) text = `Working out the climate, rivers and food… ${Math.round(100 * Math.min(1, w.finishing.share))} %`;

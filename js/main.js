@@ -28,7 +28,7 @@ import { state } from './state.js';
 import { store, sliderTooltip, detailWarning, redrawFoldedSliders, sidePanel, buildOverlay, tutorial } from './page-chrome.js';
 import { Realm } from './realm/realm.js';
 import { Composer, ownLayers } from './dnd/composer.js';
-import { sliderBoxes, dockLayout, trimView } from './dnd/panels.js';
+import { sliderBoxes, dockLayout, trimView, progressBar } from './dnd/panels.js';
 
 setDelaunator(Delaunator);
 
@@ -56,6 +56,7 @@ const view = pv.view;
 // (D&D fork: the realm — kingdoms, cities, routes — on the finished world; and the map, not the globe, to start)
 realm = new Realm({ pv, onChange: () => { dirty = true; }, getCode: () => currentCode });
 trimView(pv);
+progressBar();
 // (once the page's own state below is set up: the composer, the sliders' boxes, the Politica panel, the map to start)
 queueMicrotask(() => {
     composer = new Composer({ pv, realm, world: () => world, onChange: () => { dirty = true; } });
@@ -176,6 +177,15 @@ async function finish(w) {
 
 /** The chip over the planet: the finish under way (on the layers it brings), or what went wrong. */
 function updateChip() {
+    // (D&D fork: the world's finish on the progress bar — its stage of the stages, how far into it)
+    {
+        const w = world, f = w?.finishing;
+        if (!f) window.dndProgress?.('world', null);
+        else {
+            const i = Math.max(0, FINISH_STAGES.findIndex(([k]) => k === f.stage)), before = FINISH_STAGES.slice(0, i).reduce((t, [, v]) => t + v, 0), part = FINISH_STAGES[i]?.[1] || 1;
+            window.dndProgress?.('world', i + 1, FINISH_STAGES.length, `the world: ${f.stage}`, (f.share - before) / part);
+        }
+    }
     const chip = $('climateChip'), w = world, needs = CLIMATE_LAYERS.has(view.layer) || GEOLOGY_LAYERS.has(view.layer) || FARMING_LAYERS.has(view.layer);
     let text = null, act = null;
     if (w?.finishing && needs) text = `Working out the climate, rivers, rocks and food… ${Math.round(100 * Math.min(1, w.finishing.share))} %`;

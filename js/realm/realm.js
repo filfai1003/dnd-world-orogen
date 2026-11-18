@@ -53,7 +53,7 @@ export class Realm {
         this.world = null; this.data = null; this.version = 0; this.busy = false; this.ready = false; this.reqId = 0;
         this.names = { kingdoms: [], cities: [], colors: [], prefs: [] };
         // (the kingdoms only coloured: never a border line)
-        this.show = { fills: true, borders: false, routes: true, names: true };
+        this.show = { fills: true, borders: false, routes: true, names: true, capitals: true, towns: true };
         this.editing = false; this.drag = null;
         // (on or off over any base map: the composer's Politica switch — composer.js draws it on screen)
         this.enabled = true; this.screenPos = []; this.labelBoxes = [];
@@ -113,9 +113,11 @@ export class Realm {
         k.addEventListener('input', sync); n.addEventListener('input', sync); sync();
         $('realmBuild').addEventListener('click', () => this.auto());
         $('realmReset').addEventListener('click', () => { this.forget(); this.auto(); });
-        for (const [id, key] of [['chkRealmRoutes', 'routes'], ['chkRealmNames', 'names']]) {
+        for (const [id, key] of [['chkRealmFills', 'fills'], ['chkRealmCaps', 'capitals'], ['chkRealmTowns', 'towns'], ['chkRealmNames', 'names'], ['chkRealmRoutes', 'routes']]) {
             $(id).checked = this.show[key];
-            $(id).addEventListener('change', (e) => { this.show[key] = e.target.checked; this.changed(false); });
+            try { const kept = JSON.parse(localStorage.getItem('dnd.show') || '{}'); if (key in kept) this.show[key] = !!kept[key]; } catch { /* */ }
+            $(id).checked = this.show[key];
+            $(id).addEventListener('change', (e) => { this.show[key] = e.target.checked; this.fillFor = null; try { localStorage.setItem('dnd.show', JSON.stringify(this.show)); } catch { /* */ } this.changed(false); });
         }
         $('realmEdit').addEventListener('click', () => this.setEditing(!this.editing));
         // (the lists: names typed, a capital chosen, a city removed)
@@ -443,7 +445,7 @@ export class Realm {
             if (o.fills) this.paintFills(ctx, W, H);
             if (o.borders) this.paintBorders(ctx, W, H, s);
             if (o.routes) this.paintRoutes(ctx, W, H, s);
-            if (o.cities !== false) this.paintCities(ctx, W, H, s, o.names);
+            if (o.cities !== false) this.paintCities(ctx, W, H, s, o.names, o);
             ctx.restore();
         }
         ctx.restore();
@@ -525,12 +527,13 @@ export class Realm {
         }
         ctx.setLineDash([]);
     }
-    paintCities(ctx, W, H, s, names) {
+    paintCities(ctx, W, H, s, names, o = this.show) {
         const d = this.data, dr = this.drag;
         const order = d.cities.map((c, i) => i).sort((a, b) => d.cities[a].people - d.cities[b].people);
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         for (const i of order) {
             const c = d.cities[i], u = dr && dr.i === i ? dr.u : c.u, v = dr && dr.i === i ? dr.v : c.v;
+            if (c.crown ? o.capitals === false : o.towns === false) continue;
             const x = u * W, y = v * H, big = c.crown, r = (big ? 5.5 : 2.4 + Math.min(2.6, Math.log10(Math.max(1000, c.people)) - 3)) * s;
             ctx.lineWidth = 1.2 * s; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.fillStyle = big ? kcol(c.kingdom) : 'rgba(250,240,215,0.95)';
             if (big) { star(ctx, x, y, r); ctx.fill(); ctx.stroke(); }
@@ -543,7 +546,7 @@ export class Realm {
             ctx.fillStyle = 'rgba(40,25,15,1)'; ctx.fillText(name, x + r + 3 * s, y);
         }
         // (the kingdoms' names, large, over their capitals)
-        if (names && this.show.fills) {
+        if (names) {
             for (const c of d.cities) {
                 if (!c.capital) continue;
                 const name = (this.names.kingdoms[c.kingdom] ?? '').toUpperCase(), x = c.u * W, y = c.v * H - 16 * s;
@@ -557,7 +560,7 @@ export class Realm {
 
     // ── on screen: each city's mark and name, and each kingdom's name, at a constant size (composer.js's layer) ──
     /** The screen key's part for the realm (drawn again when it changes). */
-    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}`; }
+    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}`; }
     /** Draw on the composer's screen layer: `pr.at(u, v)` → client px or null, `line(pts)` a broken polyline, `placed` the
      *  labels' boxes already taken. */
     drawOnScreen(ctx, pr, line, placed) {
@@ -613,7 +616,8 @@ export class Realm {
         this.screenPos = pos;
         // (the kingdoms' names over their capitals — or, where they do not all fit, in the legend)
         let inLegend = false;
-        if (sh.names && sh.fills) {
+        const shown = (c) => (c.crown ? sh.capitals !== false : sh.towns !== false);
+        if (sh.names) {
             const ks = [];
             for (let i = 0; i < d.cities.length; i++) {
                 const c = d.cities[i], q = pos[i]; if (!c.capital || !inView(q)) continue;
@@ -624,7 +628,7 @@ export class Realm {
         if (inLegend !== this.kingdomsInLegend) { this.kingdomsInLegend = inLegend; queueMicrotask(() => this.onLegend?.()); }
         const order = d.cities.map((_, i) => i).sort((a, b) => (d.cities[b].crown - d.cities[a].crown) || (d.cities[b].people - d.cities[a].people));
         for (const i of [...order].reverse()) {
-            const c = d.cities[i], q = pos[i]; if (!q) continue;
+            const c = d.cities[i], q = pos[i]; if (!q || !shown(c)) continue;
             const [x, y] = q, r = c.crown ? (c.capital ? 7 : 6) : 2.5 + Math.min(2.5, Math.max(0, Math.log10(Math.max(1, c.people)) - 3));
             ctx.lineWidth = 1.3; ctx.strokeStyle = 'rgba(40,25,15,0.95)'; ctx.fillStyle = c.crown ? kcol(c.kingdom) : 'rgba(250,242,222,1)';
             if (c.crown) { star(ctx, x, y, r); ctx.fill(); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); }
@@ -635,7 +639,7 @@ export class Realm {
         // (then the capitals' names, all or none; and only if they all fit, the towns', all or none)
         if (sh.names) {
             const item = (i) => { const c = d.cities[i], q = pos[i]; return { text: this.names.cities[i] ?? '', x: q[0] + (c.crown ? 7 : 4) + 4, y: q[1], font: `${c.crown ? '600 13px' : c.people >= 15000 ? '12px' : '11px'} Georgia, 'Times New Roman', serif`, fill: 'rgba(40,25,15,1)', align: 'left', tag: { kind: 'c', i } }; };
-            const seen = order.filter(i => inView(pos[i]));
+            const seen = order.filter(i => inView(pos[i]) && shown(d.cities[i]));
             if (tier(seen.filter(i => d.cities[i].crown).map(item))) tier(seen.filter(i => !d.cities[i].crown).map(item));
         }
         for (const [text, x, y, font, fill, align] of later) {

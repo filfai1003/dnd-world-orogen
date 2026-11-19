@@ -43,7 +43,11 @@ self.onmessage = ({ data: msg }) => {
         const t0 = performance.now();
         G.reqId = msg.id; G.ncap = msg.ncap || []; G.keepPorts = msg.keepPorts || []; G.seatsIn = msg.seats || null; G.edits = msg.edits || null;
         if (msg.cmd === 'link') { self.postMessage({ type: 'link', id: msg.id, route: linkRoute(msg.a, msg.b, msg.from, msg.to, msg.ports || []) }); return; }
-        if (msg.cmd === 'trip') { self.postMessage({ type: 'trip', id: msg.id, key: msg.key, options: tripOptions(msg.cells, (k, n) => self.postMessage({ type: 'tripProgress', id: msg.id, k, n })) }); return; }
+        if (msg.cmd === 'trip') {
+            // (a place that is no city: the grid's cell under it)
+            const cells = msg.cells.map((c, i) => c >= 0 ? c : Math.min(G.GH - 1, Math.floor(msg.uv[i][1] * G.GH)) * G.GW + Math.min(G.GW - 1, Math.floor(msg.uv[i][0] * G.GW)));
+            self.postMessage({ type: 'trip', id: msg.id, key: msg.key, options: tripOptions(cells, (k, n) => self.postMessage({ type: 'tripProgress', id: msg.id, k, n })) }); return;
+        }
         if (msg.cmd === 'unroute') { const gone = new Set(msg.pairs.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`))); G.routeList = (G.routeList || []).filter(r => !gone.has(r.a < r.b ? `${r.a}-${r.b}` : `${r.b}-${r.a}`)); roadMasks(); return; }
         if (msg.cmd === 'fixed') { say(1); G.adapt = adaptOf(msg.prefs); G.prefs = msg.prefs || []; }
         const res = msg.cmd === 'auto' ? autoRealm(msg.K, msg.N, msg.prefs || [], msg.mins || [], msg.ports || []) : fixedRealm(msg.cities, msg.owner);
@@ -392,6 +396,7 @@ function layerStep(L, a, b, d, ex, ny) {
 }
 /** The best journey from cell `a` to cell `b` using only the layers `allowed` (on foot always), vehicles changed in cities. */
 function journey(a, b, allowed, startL = FOOT) {
+    const fresh = startL < 0; if (fresh) startL = FOOT;     // (−1: the journey's very start)
     const g = G, { GW, GH, n } = g, N = LAYERS * n;
     if (!g.mdist) { g.mdist = new Float32Array(N); g.mfrom = new Int32Array(N); g.mheap = new Heap(1 << 20); }
     const { mdist, mfrom, mheap } = g, ok = new Uint8Array(LAYERS);
@@ -400,6 +405,8 @@ function journey(a, b, allowed, startL = FOOT) {
     mdist[a] = 0; mheap.push(a, 0);
     // (a stop on a longer journey: the vehicle the last leg ended in kept, at no cost)
     if (startL !== FOOT && ok[startL] && canBe(startL, a)) { mdist[a + startL * n] = 0; mheap.push(a + startL * n, 0); }
+    // (a start that is no city — a place picked on the map: already in whatever vehicle can be there; out at sea, a boat)
+    else if (fresh && !g.cityCell[a]) for (let L = 1; L < LAYERS; L++) if (ok[L] && canBe(L, a) && (L !== SHIP || !g.land[a])) { mdist[a + L * n] = 0; mheap.push(a + L * n, 0); }
     let end = -1;
     while (mheap.size) {
         const k = mheap.keys[0], v = mheap.pop();
@@ -482,7 +489,7 @@ function tripOptions(stops, done) {
     let k = 0;
     plans.forEach(([key, allowed], pi) => {
         // (leg by leg, each starting in the vehicle the last one ended in — it can be kept, or changed, in the city)
-        let all = { days: 0, by: { foot: 0, carry: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path: [], layers: [], legs: [], hazards: hazardsNew() }, L = FOOT;
+        let all = { days: 0, by: { foot: 0, carry: 0, canoe: 0, light: 0, heavy: 0, ship: 0, change: 0 }, path: [], layers: [], legs: [], hazards: hazardsNew() }, L = -1;
         for (let i = 0; i < legsN && all; i++) {
             const o = journey(stops[i], stops[i + 1], allowed, L);
             done?.(++k, total);

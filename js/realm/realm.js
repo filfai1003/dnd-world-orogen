@@ -246,9 +246,9 @@ export class Realm {
         addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.editing) this.setEditing(false); });
         // (a name changed on the map: a double click on a city or on a kingdom)
         document.addEventListener('dblclick', (e) => this.renameAt(e), { capture: true });
-        // (a left click on a city: the journey's start, then its end — the best way with a river boat, and without one)
+        // (a left click on a city or any place: the journey's start, then its end — the best ways of travelling)
         let down = null;
-        document.addEventListener('pointerdown', (e) => { down = e.button === 0 && !e.ctrlKey && !e.metaKey && this.onPlanet(e) ? [e.clientX, e.clientY] : null; }, { capture: true });
+        document.addEventListener('pointerdown', (e) => { down = e.button === 0 && !e.ctrlKey && !e.metaKey && !e.altKey && this.onPlanet(e) ? [e.clientX, e.clientY] : null; }, { capture: true });
         document.addEventListener('pointerup', (e) => {
             if (!down || e.button !== 0) return;
             const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5; down = null;
@@ -355,23 +355,34 @@ export class Realm {
         this.worker.postMessage({ cmd: 'link', id: ++this.tripId, a, b, from: d.cities[a].c, to: d.cities[b].c, ports: d.cities.filter(c => c.port).map(c => c.c) });
         this.save();
     }
-    /** A city picked: the first a journey's start, the second its end; Shift + click, one more stop (a click off the
-     *  cities: the journey cleared). */
+    /** A city or any place picked: the first a journey's start, the second its end; Shift + click, one more stop. A stop
+     *  is `{ city, u, v }` — `city` the city's index, or −1 for a place that is no city. */
     pickCity(e) {
         let best = -1, bd = 14;
         this.screenPos.forEach((q, i) => { if (!q) return; const d = Math.hypot(q[0] - e.clientX, q[1] - e.clientY); if (d < bd) { bd = d; best = i; } });
-        if (best < 0) { if (this.trip) this.clearTrip(); return; }
-        const t = this.trip;
-        if (t && t.stops.length >= 2 && e.shiftKey && t.stops[t.stops.length - 1] !== best) { t.stops.push(best); this.runTrip(); return; }
-        if (!t || t.stops.length >= 2 || t.stops[0] === best) { this.trip = { stops: [best] }; this.tripCard(); this.changed(false); return; }
-        t.stops.push(best); this.runTrip();
+        let stop;
+        if (best >= 0) stop = { city: best, u: this.data.cities[best].u, v: this.data.cities[best].v };
+        else { const at = this.uvOf(e); if (!at) { if (this.trip) this.clearTrip(); return; } stop = { city: -1, u: at.u, v: at.v }; }
+        const t = this.trip, last = t?.stops[t.stops.length - 1];
+        // (the same stop twice: within a city's ring, or a few pixels of the place picked)
+        const same = (a) => { if (!a) return false; if (a.city >= 0 || stop.city >= 0) return a.city === stop.city; const q = this.lastPr?.at(a.u, a.v); return !!q && Math.hypot(q[0] - e.clientX, q[1] - e.clientY) < 14; };
+        if (t && t.stops.length >= 2 && e.shiftKey && !same(last)) { t.stops.push(stop); this.runTrip(); return; }
+        if (!t || t.stops.length >= 2 || same(t.stops[0])) { this.trip = { stops: [stop] }; this.tripCard(); this.changed(false); return; }
+        t.stops.push(stop); this.runTrip();
     }
+    /** A stop's name: its city's, or the place's latitude and longitude. */
+    stopName(s) {
+        if (s.city >= 0) return this.names.cities[s.city] ?? '';
+        const lat = 90 - s.v * 180, lon = s.u * 360 - 180;
+        return `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
+    }
+    stopKey(s) { return s.city >= 0 ? `c${s.city}` : `${s.u.toFixed(5)},${s.v.toFixed(5)}`; }
     /** The journey's ways worked out again, for its stops. */
     runTrip() {
         const t = this.trip, d = this.data;
         t.loading = true; t.options = null; t.k = 0; this.tripCard(); this.changed(false);
-        t.key = t.stops.join('-');
-        this.worker.postMessage({ cmd: 'trip', id: ++this.tripId, key: t.key, cells: t.stops.map(i => d.cities[i].c) });
+        t.key = t.stops.map(s => this.stopKey(s)).join('-');
+        this.worker.postMessage({ cmd: 'trip', id: ++this.tripId, key: t.key, cells: t.stops.map(s => (s.city >= 0 ? d.cities[s.city].c : -1)), uv: t.stops.map(s => [s.u, s.v]) });
     }
     clearTrip() { this.trip = null; this.tripCard(); this.changed(false); }
     /** The journey's card: the two ways, their days and how they are spent. */
@@ -386,13 +397,13 @@ export class Realm {
                 const r = e.target.closest('[data-way]'); if (r && this.trip?.options?.[r.dataset.way]) { this.trip.shown = r.dataset.way; this.tripCard(); this.changed(false); }
             });
         }
-        const t = this.trip, nm = (i) => esc(this.names.cities[i] ?? '');
+        const t = this.trip, nm = (s) => esc(this.stopName(s));
         const days = (x) => `${x < 10 ? x.toFixed(1) : Math.round(x)} d`;
         const parts = (o) => [['foot', 'on foot'], ['carry', 'on foot carrying the canoe'], ['canoe', 'by canoe'], ['light', 'by light vehicle'], ['heavy', 'by heavy vehicle'], ['ship', 'by travelling boat'], ['change', 'getting or changing vehicles']]
             .filter(([k]) => o.by[k] > 0.05).map(([k, l]) => `${days(o.by[k])} ${l}`).join(' · ');
         const route = t.stops.map(nm).map(n => `<b>${n}</b>`).join(' → ');
         let body;
-        if (t.stops.length < 2) body = `<div class="dnd-trip-hint">From <b>${nm(t.stops[0])}</b> — click a second city</div>`;
+        if (t.stops.length < 2) body = `<div class="dnd-trip-hint">From <b>${nm(t.stops[0])}</b> — click a second city or place</div>`;
         else if (t.loading) body = `<div class="dnd-trip-hint">${route} · working out the ways… ${t.k ? `${t.k} of ${t.n}` : ''}</div>`;
         else {
             const O = t.options;
@@ -411,7 +422,7 @@ export class Realm {
             body = `<div class="dnd-trip-head">${route}</div>
                 ${row('mix', 'Best, mixing them')}${row('foot', 'On foot')}${row('canoe', 'Canoe')}${row('light', 'Light vehicle')}${row('heavy', 'Heavy vehicle')}${row('ship', 'Travelling boat')}
                 ${o ? `<div class="dnd-trip-hazards"><b>Dangers on the way shown</b> ${hz.length ? hz.join(' · ') : 'none to speak of'}</div>${legs}` : ''}
-                <div class="dnd-trip-hint">Vehicles change only in a city (a canoe can also be got at any shore or river, and left anywhere; the travelling boat only in a port). Click a way to see it on the map. Shift + click a city to add a stop${t.stops.length > 2 ? ' · <button type="button" class="dnd-trip-undo">Remove the last stop</button>' : ''}.</div>`;
+                <div class="dnd-trip-hint">Vehicles change only in a city (a canoe can also be got at any shore or river, and left anywhere; the travelling boat only in a port). Click a way to see it on the map. Shift + click a city or a place to add a stop${t.stops.length > 2 ? ' · <button type="button" class="dnd-trip-undo">Remove the last stop</button>' : ''}.</div>`;
         }
         el.innerHTML = `<button type="button" class="dnd-trip-x" aria-label="Close">×</button>${body}`;
     }
@@ -421,6 +432,8 @@ export class Realm {
         let hit = null;
         for (const b of this.labelBoxes) if (e.clientX >= b.box[0] && e.clientX <= b.box[2] && e.clientY >= b.box[1] && e.clientY <= b.box[3]) { hit = b; break; }
         if (!hit) for (const { m, q } of this.markPos || []) if (Math.hypot(e.clientX - q[0], e.clientY - q[1]) <= 9) { hit = { kind: 'm', i: markKey(m) }; break; }
+        // (the double click's own clicks picked a journey's start: not wanted)
+        if (this.trip && this.trip.stops.length === 1) this.clearTrip();
         if (!hit) {
             const p = this.pv.placeUnder(e);
             const i = p ? this.cityNear(p[0], p[1], e) : -1;
@@ -998,7 +1011,7 @@ export class Realm {
 
     // ── on screen: each city's mark and name, and each kingdom's name, at a constant size (composer.js's layer) ──
     /** The screen key's part for the realm (drawn again when it changes). */
-    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.stops.join('-')}-${!!this.trip.options}-${this.trip.shown}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}|${sh.marks}|${JSON.stringify(this.names.marks || {}).length}`; }
+    screenKey() { const sh = this.show; return `${this.enabled}|${!!this.data}|${this.version}|${this.linkFrom ?? ''}|${this.trip ? `${this.trip.stops.map(s => this.stopKey(s)).join('-')}-${!!this.trip.options}-${this.trip.shown}` : ''}|${sh.names}|${sh.fills}|${sh.borders}|${sh.routes}|${sh.capitals}|${sh.towns}|${sh.marks}|${JSON.stringify(this.names.marks || {}).length}`; }
     /** Draw on the composer's screen layer: `pr.at(u, v)` → client px or null, `line(pts)` a broken polyline, `placed` the
      *  labels' boxes already taken. */
     drawOnScreen(ctx, pr, line, placed) {
@@ -1045,7 +1058,7 @@ export class Realm {
                 }
                 ctx.setLineDash([]);
             }
-            t.stops.forEach((i, j) => { const q = pr.at(d.cities[i].u, d.cities[i].v); if (!q) return; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 12, 0, 2 * Math.PI); ctx.stroke(); if (t.stops.length > 2) { ctx.font = "600 11px Georgia, 'Times New Roman', serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(250,242,222,0.95)'; ctx.strokeText(String(j + 1), q[0], q[1] - 19); ctx.fillStyle = 'rgba(178,34,30,1)'; ctx.fillText(String(j + 1), q[0], q[1] - 19); } });
+            t.stops.forEach((s, j) => { const q = pr.at(s.u, s.v); if (!q) return; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], s.city >= 0 ? 12 : 7, 0, 2 * Math.PI); ctx.stroke(); if (s.city < 0) { ctx.fillStyle = 'rgba(178,34,30,0.95)'; ctx.beginPath(); ctx.arc(q[0], q[1], 2.5, 0, 2 * Math.PI); ctx.fill(); } if (t.stops.length > 2) { ctx.font = "600 11px Georgia, 'Times New Roman', serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(250,242,222,0.95)'; ctx.strokeText(String(j + 1), q[0], q[1] - 19); ctx.fillStyle = 'rgba(178,34,30,1)'; ctx.fillText(String(j + 1), q[0], q[1] - 19); } });
         }
         // (the names: the kingdoms' first, over their capitals, then the towns' by importance, none over another)
         const fits = (b) => { for (const o of placed) if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; placed.push(b); return true; };

@@ -1,4 +1,4 @@
-# World Orogen — D&D edition
+# Realm Forge — a D&D edition of World Orogen
 
 A personal fork of [World Orogen](https://github.com/raguilar011095/planet_heightmap_generation) by Robert Aguilar (GPL-3.0), adapted to build worlds for D&D campaigns. Two tools: **Generate** (generate.html) and **Import** (import.html, your own heightmap). Evolution is not part of this fork.
 
@@ -128,7 +128,7 @@ tokens.css              The style guide's design tokens (all pages): colours for
                         lines, sizes and shadows, and the fonts
 styles.css              Shared CSS (all pages); today's interface colours are the --ui-* variables at its top
 assets/fonts/           The three typefaces, self-hosted (woff2), and their licence (OFL.txt)
-assets/brand/           The World Orogen mark, the favicon and app icons (site.webmanifest), and the line icons
+assets/brand/           The Realm Forge mark (a twenty-sided die), the favicon and app icons (site.webmanifest), and the line icons
 robots.txt              Search engine crawler directives
 sitemap.xml             Sitemap for search engine indexing
 site.webmanifest        Web app manifest (metadata + theming)

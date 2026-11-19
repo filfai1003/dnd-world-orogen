@@ -166,6 +166,10 @@ body { background: var(--ui-page); overflow: hidden; font-family: var(--font-ui)
 .og-mark .s2 { fill: var(--logo-ochre); }
 .og-mark .s3 { fill: var(--logo-blue); }
 .og-mark .ring { fill: none; stroke: var(--ink); }
+/* The D&D fork's mark: a twenty-sided die (its body, its front face, its edges). */
+.og-mark .d20-body { fill: var(--logo-violet); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+.og-mark .d20-face { fill: var(--logo-ochre); stroke: var(--ink); stroke-width: 1.2; stroke-linejoin: round; }
+.og-mark .d20-edge { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
 /* after the tabs, past a short divider: GitHub, then the follow links (on phones and tablets the panel's foot has them) */
 .nav-follow { display: flex; align-items: center; gap: 2px; flex: none; margin-left: 6px; }
 .nav-follow::before { content: ''; width: 1px; height: 16px; background: var(--ui-white-14); margin-right: 8px; }

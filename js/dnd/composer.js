@@ -8,7 +8,7 @@ import { finishedClimateValue } from '../../v2/js/evolution/climate-view.js';
 import { colorMap, satelliteMap, farmingMap, climateMap, paintAt, rollRows, rollShift } from '../../v2/js/evolution/export.js';
 import { P as PROJ } from '../../v2/js/view/projections.js';
 import { riverPaths, drawRivers } from '../../v2/js/evolution/finish-view.js';
-import { DRAWN_LAYER, drawnColorAt, drawIcons, drawnLegend } from './drawn.js';
+import { DRAWN_LAYER, drawnColorAt, drawIcons, drawnLegend, loadIcons } from './drawn.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -232,6 +232,8 @@ export class Composer {
         const layer = { terrain: 'terrain', drawn: DRAWN_LAYER, satellite: 'satellite', temp: TEMP_LAYER, fert: this.fertMode }[this.base];
         this.pv.view.season = this.base === 'temp' ? this.tempSeason : 'year';
         this.pv.setLayer(layer);
+        // (the Illustrated base's painted icons: loaded the first time it is chosen, the map drawn again when they are there)
+        if (this.base === 'drawn') loadIcons().then(ok => { if (ok && this.base === 'drawn') this.changed(); });
         this.changed();
         if ($('dndRail')) this.railState();
     }

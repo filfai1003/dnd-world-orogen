@@ -159,36 +159,70 @@ function dune(ctx, x, y, s) {
     ctx.stroke();
 }
 
+// ── the painted icons (assets/icons: a sheet and its rectangles for each kind; the vector icons above stand in until they are loaded) ──
+const KINDS = ['mountain', 'hill', 'tree', 'desert'];
+let sprites = null, loading = null;
+/** The sheets of painted icons loaded (once). Resolves true when they are there, false if they could not be. */
+export function loadIcons() {
+    if (sprites) return Promise.resolve(true);
+    if (!loading) {
+        const base = new URL('../../assets/icons/', import.meta.url);
+        loading = fetch(new URL('icons.json', base)).then(r => r.json()).then(async (man) => {
+            const out = {};
+            await Promise.all(KINDS.map(k => new Promise((res, rej) => { const im = new Image(); im.onload = () => { out[k] = { img: im, rects: man[k] }; res(); }; im.onerror = rej; im.src = new URL(`${k}.png`, base).href; })));
+            sprites = out; return true;
+        }).catch(() => { loading = null; return false; });
+    }
+    return loading;
+}
+/** A painted icon at (x, y) — its foot — about `size` across (the geometric mean of its sides), by its kind. */
+function paint(ctx, kind, pick, x, y, size, flip) {
+    const sh = sprites[kind], list = sh.rects, [sx, sy, sw, sh_] = list[pick % list.length], k = size / Math.sqrt(sw * sh_), dw = sw * k, dh = sh_ * k;
+    if (flip) { ctx.save(); ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(sh.img, sx, sy, sw, sh_, -dw / 2, y - dh, dw, dh); ctx.restore(); }
+    else ctx.drawImage(sh.img, sx, sy, sw, sh_, x - dw / 2, y - dh, dw, dh);
+}
+const pickOf = (sh, kind, flag, r) => { const idx = sh[kind].rects.map((q, i) => (q[4] === flag ? i : -1)).filter(i => i >= 0); return idx.length ? idx[Math.floor(r * idx.length) % idx.length] : Math.floor(r * sh[kind].rects.length); };
+
 /** The icons of the picture's relief, drawn over a W-wide picture (a rolled map: call it once shifted, once a width over). */
 export function drawIcons(ctx, W, fin) {
-    const { h, sea, wat } = rasterOf(fin, WI), f = W / WI, s = W / 150, cell = s * 1.15;
+    const { h, sea, wat } = rasterOf(fin, WI), f = W / WI, s = W / 150;
     const T = finishedClimateValue('temperature', 'year', fin.climate, WI), P = finishedClimateValue('precip', 'year', fin.climate, WI);
     const sites = [];
-    const cols = Math.ceil(W / cell), rows = Math.ceil((W / 2) / cell);
-    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-        const r1 = hash2(i, j), r2 = hash2(i + 977, j + 131), r3 = hash2(i + 31, j + 4001);
-        const x = (i + 0.15 + 0.7 * r1) * cell, y = (j + 0.15 + 0.7 * r2) * cell;
-        const px = Math.min(WI - 1, Math.floor(x / f)), py = Math.min((WI >> 1) - 1, Math.floor(y / f)), p = py * WI + px;
-        if (sea[p] || (wat && wat[p])) continue;
-        // (not on the coast: the icon would run into the inked line)
-        const nb = 2;
-        if (sea[Math.max(0, p - nb)] || sea[Math.min(sea.length - 1, p + nb)] || sea[Math.max(0, p - nb * WI)] || sea[Math.min(sea.length - 1, p + nb * WI)]) continue;
-        const v = h[p], rain = 12 * P(px, py, false), t = T(px, py, false);
-        if (v > 1.6) { if (r3 < clamp01(0.35 + (v - 1.6) / 2.2)) sites.push({ x, y, k: 'm', s: s * (0.7 + 0.5 * clamp01((v - 1.6) / 4) + 0.2 * r1), snow: v > 3.4 || t < -2 }); }
-        else if (v > 0.55) { if (r3 < 0.55) sites.push({ x, y, k: 'h', s: s * (0.7 + 0.3 * r1) }); }
-        else if (t > -4 && rain > 620 && v < 1.5) {
-            const dens = clamp01((rain - 620) / 1100) * 0.7 + 0.12;
-            if (r3 < dens) sites.push({ x, y, k: 't', s: s * (0.62 + 0.3 * r2), pine: t < 9, dark: rain > 1500 });
-        } else if (rain < 220 && t > 5 && r3 < 0.14) sites.push({ x, y, k: 'd', s: s * 0.8 });
+    // (a pass for each kind, on its own jittered grid: a cell and the test of a place in it)
+    const passes = [
+        { kind: 'mountain', cell: 1.5, at: (v, t, rain, r) => v > 1.5 && r < clamp01(0.3 + (v - 1.5) / 2.4), size: (v, r) => s * (2.1 + 1.5 * clamp01((v - 1.5) / 3.5) + 0.3 * r), snow: (v, t) => v > 3.4 || t < -2 },
+        { kind: 'hill', cell: 1.7, at: (v, t, rain, r) => v > 0.7 && v <= 1.5 && r < (rain > 900 ? 0.22 : 0.5), size: (v, r) => s * (1.9 + 0.4 * r) },
+        { kind: 'tree', cell: 1.0, at: (v, t, rain, r) => v < 1.5 && t > -4 && rain > 620 && r < (clamp01((rain - 620) / 1100) * 0.7 + 0.12) * (v > 0.7 ? 0.5 : 1), size: (v, r) => s * (1.05 + 0.3 * r), pine: (v, t) => t < 9 },
+        { kind: 'desert', cell: 2.2, at: (v, t, rain, r) => rain < 220 && t > 5 && v < 1.2 && r < 0.4, size: (v, r) => s * (2 + 0.4 * r) },
+    ];
+    for (const ps of passes) {
+        const cell = s * ps.cell, cols = Math.ceil(W / cell), rows = Math.ceil((W / 2) / cell), seed = ps.kind.length * 7919;
+        for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+            const r1 = hash2(i + seed, j), r2 = hash2(i + 977, j + 131 + seed), r3 = hash2(i + 31 + seed, j + 4001), r4 = hash2(i + 5, j + 17 + seed);
+            const x = (i + 0.15 + 0.7 * r1) * cell, y = (j + 0.15 + 0.7 * r2) * cell;
+            const px = Math.min(WI - 1, Math.floor(x / f)), py = Math.min((WI >> 1) - 1, Math.floor(y / f)), p = py * WI + px;
+            if (sea[p] || (wat && wat[p])) continue;
+            // (not on the coast: the icon would run into the inked line)
+            const nb = 3;
+            if (sea[Math.max(0, p - nb)] || sea[Math.min(sea.length - 1, p + nb)] || sea[Math.max(0, p - nb * WI)] || sea[Math.min(sea.length - 1, p + nb * WI)]) continue;
+            const v = h[p], rain = 12 * P(px, py, false), t = T(px, py, false);
+            if (!ps.at(v, t, rain, r3)) continue;
+            sites.push({ x, y, k: ps.kind, size: ps.size(v, r4), snow: ps.snow?.(v, t) ? 1 : 0, pine: ps.pine ? (ps.pine(v, t) ? (r4 > 0.12 ? 1 : 0) : (r4 > 0.88 ? 1 : 0)) : 0, r: r4, flip: r1 > 0.5 });
+        }
     }
     sites.sort((a, b) => a.y - b.y);
     ctx.save();
-    inkStroke(ctx, Math.max(0.8, W / 2048 * 0.9));
-    for (const q of sites) {
-        if (q.k === 'm') mountain(ctx, q.x, q.y, q.s, q.snow);
-        else if (q.k === 'h') hill(ctx, q.x, q.y, q.s);
-        else if (q.k === 't') tree(ctx, q.x, q.y, q.s, q.pine, q.dark);
-        else dune(ctx, q.x, q.y, q.s);
+    if (sprites) {
+        for (const q of sites) paint(ctx, q.k, pickOf(sprites, q.k, q.k === 'mountain' ? q.snow : q.k === 'tree' ? q.pine : 0, q.r), q.x, q.y, q.size, q.flip && q.k !== 'mountain');
+    } else {
+        // (the vector icons, until the painted ones are loaded)
+        inkStroke(ctx, Math.max(0.8, W / 2048 * 0.9));
+        for (const q of sites) {
+            if (q.k === 'mountain') mountain(ctx, q.x, q.y, q.size * 0.45, q.snow);
+            else if (q.k === 'hill') hill(ctx, q.x, q.y, q.size * 0.5);
+            else if (q.k === 'tree') tree(ctx, q.x, q.y, q.size * 0.9, q.pine, false);
+            else dune(ctx, q.x, q.y, q.size * 0.4);
+        }
     }
     ctx.restore();
 }

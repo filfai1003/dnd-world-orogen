@@ -145,6 +145,10 @@ export class Composer {
                         <label><input type="radio" name="dndSeason" value="jul">July</label>
                     </div>
                 </section>
+                <section class="dnd-fly-part" data-part="drawn" hidden>
+                    <div class="dnd-fly-head"><h3>Illustrated</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
+                    <label class="toggle-label dnd-show"><input type="checkbox" id="dndIcons" checked><span class="toggle-track"><span class="toggle-thumb"></span></span>Icons (mountains, hills, forests, deserts)</label>
+                </section>
                 <section class="dnd-fly-part" data-part="fert" hidden>
                     <div class="dnd-fly-head"><h3>Fertility</h3><button type="button" class="dnd-fly-x" aria-label="Close">×</button></div>
                     <div class="dnd-choice" id="dndFertMode">
@@ -191,7 +195,7 @@ export class Composer {
                 const same = this.base === k;
                 this.base = k; this.applyBase();
                 // (a base with a choice of its own opens it; a second click closes it)
-                this.openPart((k === 'temp' || k === 'fert') && !(same && this.open === k) ? k : null);
+                this.openPart((k === 'temp' || k === 'fert' || k === 'drawn') && !(same && this.open === k) ? k : null);
                 return;
             }
             if (k === 'export') { $('exportBtn').click(); return; }
@@ -200,6 +204,7 @@ export class Composer {
         dock.querySelector('#dndTempSeason').addEventListener('change', e => { this.tempSeason = e.target.value; this.applyBase(); });
         dock.querySelector('#dndFertMode').addEventListener('change', e => { this.fertMode = e.target.value; this.applyBase(); });
         $('dndPolitics').addEventListener('change', e => this.setPolitics(e.target.checked));
+        $('dndIcons').addEventListener('change', e => { this.icons = e.target.checked; this.changed(); });
         dock.querySelector('#dndFlow').addEventListener('change', e => { this.flow = e.target.value; this.changed(); this.railState(); });
         addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.open && !this.realm.editing) this.openPart(null); });
         // (the legend of the overlays: under the base's own)
@@ -250,7 +255,7 @@ export class Composer {
         for (const tx of shift ? [-shift, W - shift] : [0]) {
             ctx.save(); ctx.translate(tx, 0);
             if (rivers && fin.rivers) { ctx.save(); ctx.scale(W / 2048, W / 2048); drawRivers(ctx, riverPaths(fin, riverQ), false); ctx.restore(); }
-            drawIcons(ctx, W, fin);
+            if (this.icons !== false) drawIcons(ctx, W, fin);
             ctx.restore();
         }
     }

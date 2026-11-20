@@ -7,6 +7,8 @@
 import { finishedClimateValue } from '../../v2/js/evolution/climate-view.js';
 import { colorMap, satelliteMap, farmingMap, climateMap, paintAt, rollRows, rollShift } from '../../v2/js/evolution/export.js';
 import { P as PROJ } from '../../v2/js/view/projections.js';
+import { riverPaths, drawRivers } from '../../v2/js/evolution/finish-view.js';
+import { DRAWN_LAYER, drawnColorAt, drawIcons, drawnLegend } from './drawn.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -90,9 +92,9 @@ function warmColdArrows(ctx, width, wind, season, C) {
 
 /** The planet view's own layers (planet-view.js ownLayers): the Temperatura base. */
 export const ownLayers = {
-    has: (l) => l === TEMP_LAYER,
-    colorAt: (layer, fin, W, lut, view) => tempColorAt(fin, W, view.season),
-    legend: (layer, view) => tempLegend(view.season),
+    has: (l) => l === TEMP_LAYER || l === DRAWN_LAYER,
+    colorAt: (layer, fin, W, lut, view) => (layer === DRAWN_LAYER ? drawnColorAt(fin, W) : tempColorAt(fin, W, view.season)),
+    legend: (layer, view) => (layer === DRAWN_LAYER ? drawnLegend() : tempLegend(view.season)),
 };
 
 // ── the composer ──
@@ -121,6 +123,7 @@ export class Composer {
     mountBar() {
         const I = {
             terrain: '<path d="M3 19 9 9l4 6 3-4 5 8z"/>',
+            drawn: '<path d="M2 20 8 8l4 7 2-3 4 8z"/><path d="M17 11V6M17 6l-2.5 3M17 6l2.5 3"/>',
             satellite: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16"/>',
             temp: '<path d="M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0z"/><path d="M12 10v6"/>',
             fert: '<path d="M12 20v-8"/><path d="M12 12C12 7 8 5 4 5c0 5 3 7 8 7z"/><path d="M12 14c0-4 3-6 8-6 0 4-3 6-8 6z"/>',
@@ -161,7 +164,8 @@ export class Composer {
                 <section class="dnd-fly-part" data-part="politics" hidden></section>
             </div>
             <nav id="dndRail" class="dnd-rail" aria-label="Map">
-                ${btn('terrain', 'Terrain: the drawn map, antique style')}
+                ${btn('terrain', 'Terrain: the relief shaded, antique palette')}
+                ${btn('drawn', 'Illustrated: a hand-drawn map, with mountains, hills and forests')}
                 ${btn('satellite', 'Satellite: the planet seen from space')}
                 ${btn('temp', 'Temperature: yearly mean, January or July')}
                 ${btn('fert', 'Fertility: farmland, aridity, growing season')}
@@ -183,7 +187,7 @@ export class Composer {
         dock.querySelectorAll('.dnd-fly-x').forEach(x => x.addEventListener('click', () => this.openPart(null)));
         dock.querySelectorAll('[data-rail]').forEach(b => b.addEventListener('click', () => {
             const k = b.dataset.rail;
-            if (['terrain', 'satellite', 'temp', 'fert'].includes(k)) {
+            if (['terrain', 'drawn', 'satellite', 'temp', 'fert'].includes(k)) {
                 const same = this.base === k;
                 this.base = k; this.applyBase();
                 // (a base with a choice of its own opens it; a second click closes it)
@@ -215,7 +219,7 @@ export class Composer {
     }
     /** The rail's icons lit: the base chosen, the overlays on, the panel open. */
     railState() {
-        const on = { terrain: this.base === 'terrain', satellite: this.base === 'satellite', temp: this.base === 'temp', fert: this.base === 'fert',
+        const on = { terrain: this.base === 'terrain', drawn: this.base === 'drawn', satellite: this.base === 'satellite', temp: this.base === 'temp', fert: this.base === 'fert',
             politics: this.realm.enabled, flow: this.flow !== 'none' };
         document.querySelectorAll('#dndRail [data-rail]').forEach(b => {
             const k = b.dataset.rail;
@@ -225,7 +229,7 @@ export class Composer {
     }
     setPolitics(on) { this.realm.enabled = on; if ($('dndPolitics')) $('dndPolitics').checked = on; if (!on && this.realm.editing) this.realm.setEditing(false); this.realm.version++; this.changed(); this.railState?.(); }
     applyBase() {
-        const layer = { terrain: 'terrain', satellite: 'satellite', temp: TEMP_LAYER, fert: this.fertMode }[this.base];
+        const layer = { terrain: 'terrain', drawn: DRAWN_LAYER, satellite: 'satellite', temp: TEMP_LAYER, fert: this.fertMode }[this.base];
         this.pv.view.season = this.base === 'temp' ? this.tempSeason : 'year';
         this.pv.setLayer(layer);
         this.changed();
@@ -236,7 +240,17 @@ export class Composer {
     draw(ctx, W, view) {
         const fin = this.world()?.fin;
         if (!fin) return;
+        if (this.base === 'drawn' && fin.climate) this.drawnOver(ctx, W, fin, view?.riverQ, view?.water !== false, 0);
         if (this.flow !== 'none' && fin.climate) warmColdArrows(ctx, W, this.flow === 'wind', this.base === 'temp' ? this.tempSeason : 'year', fin.climate);
+    }
+    /** The Illustrated base's lines over its picture: the rivers inked in blue, then the relief's icons. */
+    drawnOver(ctx, W, fin, riverQ, rivers, shift) {
+        for (const tx of shift ? [-shift, W - shift] : [0]) {
+            ctx.save(); ctx.translate(tx, 0);
+            if (rivers && fin.rivers) { ctx.save(); ctx.scale(W / 2048, W / 2048); drawRivers(ctx, riverPaths(fin, riverQ), false); ctx.restore(); }
+            drawIcons(ctx, W, fin);
+            ctx.restore();
+        }
     }
     // ── the screen layer: the realm's marks and names ──
     projector() {
@@ -367,11 +381,16 @@ export class Composer {
             const image = new ImageData(W, H);
             paintAt(fin, W, image, look.lut, { exaggeration: look.exaggeration, lakes: true, shaded: true, colorAt: tempColorAt(fin, W, season) });
             base = { data: rollRows(image.data, W, H, 4, shift) };
+        } else if (this.base === 'drawn') {
+            const image = new ImageData(W, H);
+            paintAt(fin, W, image, look.lut, { exaggeration: look.exaggeration, lakes: true, shaded: true, colorAt: drawnColorAt(fin, W) });
+            base = { data: rollRows(image.data, W, H, 4, shift) };
         } else if (this.base === 'fert') base = this.fertMode === 'farmLand' ? farmingMap(fin, W, 'farmLand', look) : climateMap(fin, W, this.fertMode, 'year', look);
         else base = colorMap(fin, W, look);
         const canvas = new OffscreenCanvas(W, H), ctx = canvas.getContext('2d');
         ctx.putImageData(new ImageData(new Uint8ClampedArray(base.data), W, H), 0, 0);
         // (the overlays, rolled as the base is: drawn once shifted, and again a map-width over where they cross the edge)
+        if (this.base === 'drawn' && fin.climate) this.drawnOver(ctx, W, fin, look.riverQ, look.water !== false, shift);
         for (const tx of shift ? [-shift, W - shift] : [0]) {
             ctx.save(); ctx.translate(tx, 0);
             if (this.flow !== 'none' && fin.climate) warmColdArrows(ctx, W, this.flow === 'wind', season, fin.climate);
